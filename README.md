@@ -9,7 +9,8 @@ FastAPI service for extracting structured resume data from uploaded PDF, DOCX, o
 - Configurable max upload size through `MAX_FILE_SIZE_MB`
 - Text extraction with PyMuPDF and python-docx
 - Clean whitespace and bullet normalization without stripping skill symbols like `C++`, `C#`, `.NET`, `Node.js`, or `CI/CD`
-- Pluggable LLM provider abstraction for OpenAI, Azure OpenAI, or Ollama
+- Rejects uploaded documents that do not appear to be resumes
+- LLM integration through OpenAI
 - Pydantic validation for the parsed resume profile
 
 ## Project Structure
@@ -23,6 +24,7 @@ app/
   core/
     config.py
     llm_client.py
+    resume_prompt.py
   models/
     resume_schema.py
   services/
@@ -68,15 +70,9 @@ docker run --env-file .env -p 8000:8000 resume-parser-service
 | --- | --- |
 | `APP_NAME` | FastAPI app name |
 | `MAX_FILE_SIZE_MB` | Maximum upload size in MB |
-| `LLM_PROVIDER` | `openai`, `azure_openai`, or `ollama` |
+| `LLM_PROVIDER` | `openai` |
 | `OPENAI_API_KEY` | OpenAI API key |
 | `OPENAI_MODEL` | OpenAI chat model |
-| `AZURE_OPENAI_ENDPOINT` | Azure OpenAI endpoint |
-| `AZURE_OPENAI_API_KEY` | Azure OpenAI key |
-| `AZURE_OPENAI_DEPLOYMENT` | Azure OpenAI deployment name |
-| `AZURE_OPENAI_API_VERSION` | Azure OpenAI API version |
-| `OLLAMA_BASE_URL` | Ollama server URL |
-| `OLLAMA_MODEL` | Ollama model name |
 
 ## Example Request
 
@@ -93,51 +89,79 @@ curl -X POST "http://localhost:8000/api/resumes/parse" \
   "profile": {
     "candidateProfile": {
       "fullName": "Alex Morgan",
-      "headline": "Python Backend Engineer",
       "email": "alex@example.com",
       "phone": "+1 555 0100",
       "location": "Austin, TX",
-      "linkedinUrl": "https://www.linkedin.com/in/alexmorgan",
-      "portfolioUrl": null,
-      "githubUrl": "https://github.com/alexmorgan",
-      "otherLinks": []
+      "currentTitle": "Python Backend Engineer",
+      "professionalHeadline": "Backend engineer with FastAPI and cloud API experience",
+      "totalExperienceYears": 8,
+      "targetRole": null,
+      "securityClearance": null,
+      "visaStatusOrWorkAuthorization": null,
+      "onlineProfiles": [
+        {
+          "platform": "LinkedIn",
+          "url": "https://www.linkedin.com/in/alexmorgan"
+        }
+      ]
     },
     "careerClassification": {
-      "primaryFunction": "Backend Engineering",
-      "industries": ["SaaS", "FinTech"],
-      "seniorityLevel": "Senior",
-      "yearsOfExperience": 8,
-      "targetRoles": ["Senior Backend Engineer", "Python API Engineer"],
-      "employmentTypeSignals": ["Full-time"]
+      "industry": "Technology",
+      "jobFamily": "Software Engineering",
+      "subSpecialization": "Backend Engineering",
+      "seniorityLevel": "Senior"
     },
-    "careerProgression": [],
+    "careerProgression": {
+      "careerLevel": "Senior",
+      "industryFocus": ["SaaS", "FinTech"],
+      "primarySpecialization": ["Backend APIs"],
+      "secondarySpecialization": ["Cloud services"]
+    },
     "professionalSummaryPoints": [
       "Backend engineer with experience building FastAPI services and cloud-native APIs."
     ],
-    "coreSkills": ["Python", "FastAPI", "Docker", "PostgreSQL", "AWS"],
-    "skillsMatrix": {
-      "technicalSkills": [
-        {
-          "skill": "Python",
-          "evidence": ["Built production API services"],
-          "proficiencySignal": "Strong"
-        }
-      ],
-      "domainSkills": [],
-      "toolsAndPlatforms": [],
-      "leadershipAndSoftSkills": [],
+    "coreSkills": {
+      "hardSkills": ["Python", "REST APIs"],
+      "toolsAndSoftware": ["Docker", "PostgreSQL"],
+      "methodologiesAndFrameworks": ["Agile"],
+      "industryKnowledge": ["SaaS"],
+      "softSkills": ["Cross-functional collaboration"],
       "languages": []
     },
-    "workExperience": [],
+    "skillsMatrix": {
+      "programmingLanguages": ["Python"],
+      "frameworks": ["FastAPI"],
+      "cloudPlatforms": ["AWS"],
+      "databases": ["PostgreSQL"],
+      "devOpsTools": ["Docker"],
+      "testingTools": [],
+      "businessTools": [],
+      "industryTools": []
+    },
+    "workExperience": [
+      {
+        "companyOrOrganization": "Example SaaS Co",
+        "role": "Senior Backend Engineer",
+        "location": "Austin, TX",
+        "startDate": "2020",
+        "endDate": null,
+        "isCurrent": true,
+        "employmentType": null,
+        "managementLevel": null,
+        "responsibilities": ["Built and maintained FastAPI services."],
+        "achievements": ["Reduced API latency by 35%."],
+        "toolsAndTaxonomiesUsed": ["Python", "FastAPI", "Docker"],
+        "keywordsExtracted": ["Python", "FastAPI", "REST APIs"],
+        "industryOrDomain": "SaaS"
+      }
+    ],
     "projectsOrCaseStudies": [],
     "achievementBank": [
       {
-        "text": "Reduced API latency by 35%",
+        "achievement": "Reduced API latency by 35%",
         "category": "Performance",
-        "sourceRole": "Senior Backend Engineer",
-        "quantified": true,
-        "metrics": ["35%"],
-        "rewritePotential": "high"
+        "sourceCompany": "Example SaaS Co",
+        "year": null
       }
     ],
     "education": [],
@@ -147,37 +171,35 @@ curl -X POST "http://localhost:8000/api/resumes/parse" \
     "volunteerExperience": [],
     "publicationsAndSpeaking": [],
     "resumeBlocks": {
-      "headlineOptions": ["Senior Python Backend Engineer"],
-      "summaryBlock": ["Backend engineer focused on reliable, scalable API systems."],
-      "skillsBlock": ["Python | FastAPI | Docker | AWS | PostgreSQL"],
-      "experienceBlocks": [],
-      "projectBlocks": [],
-      "educationBlock": [],
-      "certificationBlock": []
+      "executiveSummary": ["Backend engineer focused on reliable, scalable API systems."],
+      "technicalHighlights": ["Python, FastAPI, Docker, AWS, PostgreSQL"],
+      "leadershipHighlights": [],
+      "projectHighlights": [],
+      "industryHighlights": ["SaaS API platforms"]
     },
     "recommendedResumeVariants": [
       {
-        "variantName": "Backend API Engineer",
-        "targetRole": "Senior Backend Engineer",
-        "positioning": "Emphasize FastAPI, cloud services, and performance outcomes.",
-        "sectionsToEmphasize": ["Skills", "Experience", "Projects"],
-        "keywordsToInclude": ["FastAPI", "Docker", "REST APIs"]
+        "name": "Backend API Engineer",
+        "confidence": 0.86
       }
     ],
     "atsAnalysis": {
-      "overallScore": 82,
-      "parseReadiness": "Good",
+      "estimatedAtsScore": 82,
+      "keywordDensity": [
+        {
+          "keyword": "Python",
+          "count": 4
+        }
+      ],
+      "missingCriticalSections": [],
       "formattingRisks": [],
-      "keywordCoverage": ["Python", "FastAPI", "Docker"],
-      "sectionCompleteness": ["Experience needs stronger metrics"],
-      "recommendations": ["Add more quantified impact bullets"]
+      "duplicateSkills": []
     },
     "jobFitAnalysis": {
-      "fitScore": 78,
-      "matchedRequirements": ["Python", "FastAPI", "Docker"],
+      "matchPercentage": 78,
+      "strongMatches": ["Python", "FastAPI", "Docker"],
       "partialMatches": ["Cloud experience"],
-      "gaps": ["LLM integration not clearly stated"],
-      "positioningAdvice": ["Bring API and deployment examples higher in the resume"]
+      "missingRequirements": ["LLM integration"]
     },
     "resumeStrengths": ["Clear backend engineering focus"],
     "missingOrWeakAreas": ["Some achievements lack metrics"],
@@ -185,19 +207,17 @@ curl -X POST "http://localhost:8000/api/resumes/parse" \
     "jobDescriptionKeywordMatches": ["Python", "FastAPI"],
     "jobDescriptionKeywordGaps": ["LLM integration"],
     "resumeGenerationStrategy": {
-      "targetNarrative": "Position the candidate as a senior backend engineer for API-heavy roles.",
-      "prioritySections": ["Summary", "Skills", "Experience"],
-      "tone": "Concise and impact-focused",
-      "contentRules": ["Do not invent missing metrics"],
-      "rewriteFocusAreas": ["Quantified achievements", "Technical scope"],
-      "atsOptimizationPlan": ["Add exact job keywords where truthfully supported"]
+      "standardAtsVersion": ["Prioritize summary, skills, and experience sections."],
+      "performanceAndMetricsDrivenVersion": ["Emphasize the stated 35% latency reduction."],
+      "leadershipOrSpecialistVersion": [],
+      "functionalOrCareerChangeVersion": []
     },
     "safeRewriteSuggestions": [
       {
-        "originalText": "Worked on APIs",
-        "suggestedRewrite": "Built and maintained FastAPI services supporting production workflows.",
-        "rationale": "Adds clarity without inventing metrics.",
-        "confidence": "high"
+        "category": "Experience bullet",
+        "originalPoint": "Worked on APIs",
+        "improvedPoint": "Built and maintained FastAPI services supporting production workflows.",
+        "reason": "Adds clarity without inventing metrics."
       }
     ]
   },
@@ -221,4 +241,3 @@ The returned JSON is intentionally shaped for a downstream resume generation ser
 - `recommendedResumeVariants` can drive different generated versions for different target roles.
 - `atsAnalysis`, keyword matches, and keyword gaps can guide ATS optimization before rendering DOCX/PDF.
 - `safeRewriteSuggestions` identifies truthful improvements without fabricating responsibilities, credentials, or metrics.
-
