@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -7,11 +8,16 @@ from app.api.routes_resume import router as resume_router
 from app.core.config import get_settings
 from app.core.database import close_database, initialize_database
 
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     get_settings()
-    await initialize_database()
+    try:
+        await initialize_database()
+    except Exception as exc:
+        logger.error("Unexpected error during database initialisation: %s", exc)
     try:
         yield
     finally:
