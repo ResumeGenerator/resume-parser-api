@@ -1,5 +1,9 @@
+import logging
+
 from app.core.config import Settings, get_settings
 from app.services.resume_repository import MongoResumeRepository
+
+logger = logging.getLogger(__name__)
 
 _resume_repository: MongoResumeRepository | None = None
 
@@ -18,8 +22,17 @@ async def initialize_database() -> None:
     if not settings.mongodb_uri:
         return
 
-    repository = get_resume_repository(settings)
-    await repository.initialize()
+    try:
+        repository = get_resume_repository(settings)
+        await repository.initialize()
+        logger.info("Database initialised successfully.")
+    except Exception as exc:
+        logger.error(
+            "Database initialisation failed — the app will start without a "
+            "database connection. Endpoints that require MongoDB will be "
+            "unavailable until the connection is restored. Error: %s",
+            exc,
+        )
 
 
 def close_database() -> None:
