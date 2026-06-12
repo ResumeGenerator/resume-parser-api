@@ -16,8 +16,13 @@ async def lifespan(app: FastAPI):
     get_settings()
     try:
         await initialize_database()
-    except Exception as exc:
-        logger.error("Unexpected error during database initialisation: %s", exc)
+    except Exception as e:
+        logger.error(
+            "Database initialization failed — the app will start without a "
+            "database connection. Endpoints that require MongoDB will be "
+            "unavailable until the connection is restored. Error: %s",
+            e,
+        )
     try:
         yield
     finally:
