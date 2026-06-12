@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -7,11 +8,21 @@ from app.api.routes_resume import router as resume_router
 from app.core.config import get_settings
 from app.core.database import close_database, initialize_database
 
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     get_settings()
-    await initialize_database()
+    try:
+        await initialize_database()
+    except Exception as e:
+        logger.error(
+            "Database initialization failed — the app will start without a "
+            "database connection. Endpoints that require MongoDB will be "
+            "unavailable until the connection is restored. Error: %s",
+            e,
+        )
     try:
         yield
     finally:
