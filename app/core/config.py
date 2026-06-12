@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import AliasChoices
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -10,8 +11,18 @@ class Settings(BaseSettings):
 
     llm_provider: str = Field(default="openai", alias="LLM_PROVIDER")
 
-    openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
+    openai_api_key: str | None = Field(default=None, validation_alias=AliasChoices("OPENAI_API_KEY", "OPENAI_KEY"))
     openai_model: str = Field(default="gpt-4.1-mini", alias="OPENAI_MODEL")
+
+    mongodb_uri: str | None = Field(default=None, validation_alias=AliasChoices("MONGO_URI", "MONGODB_URI", "MONGO_URL"))
+    mongodb_database: str = Field(
+        default="resume_parser",
+        validation_alias=AliasChoices("MONGO_DATABASE", "MONGO_DB", "MONGODB_DATABASE"),
+    )
+    mongodb_resume_collection: str = Field(
+        default="parsed_resumes",
+        validation_alias=AliasChoices("MONGO_COLLECTION", "MONGODB_RESUME_COLLECTION"),
+    )
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

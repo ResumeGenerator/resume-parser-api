@@ -12,6 +12,7 @@ FastAPI service for extracting structured resume data from uploaded PDF, DOCX, o
 - Rejects uploaded documents that do not appear to be resumes
 - LLM integration through OpenAI
 - Pydantic validation for the parsed resume profile
+- Stores parsed resume documents in MongoDB
 
 ## Project Structure
 
@@ -30,6 +31,7 @@ app/
   services/
     text_extractor.py
     resume_parser.py
+    resume_repository.py
   utils/
     text_cleaner.py
     file_validator.py
@@ -73,6 +75,28 @@ docker run --env-file .env -p 8000:8000 resume-parser-service
 | `LLM_PROVIDER` | `openai` |
 | `OPENAI_API_KEY` | OpenAI API key |
 | `OPENAI_MODEL` | OpenAI chat model |
+| `MONGO_URI` | MongoDB connection URI; `MONGODB_URI` and `MONGO_URL` are also accepted |
+| `MONGO_DATABASE` | MongoDB database name; `MONGO_DB` and `MONGODB_DATABASE` are also accepted |
+| `MONGO_COLLECTION` | Collection for parsed resumes; `MONGODB_RESUME_COLLECTION` is also accepted |
+
+## Railway Deployment
+
+Set these variables in Railway:
+
+```text
+OPENAI_API_KEY=...
+MONGO_URI=...
+MONGO_DATABASE=resume_parser
+MONGO_COLLECTION=parsed_resumes
+```
+
+The Dockerfile uses Railway's `PORT` environment variable automatically:
+
+```text
+uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
+```
+
+If your Railway MongoDB service exposes `MONGODB_URI` or `MONGO_URL`, the app will accept those too.
 
 ## Example Request
 
@@ -86,6 +110,7 @@ curl -X POST "http://localhost:8000/api/resumes/parse" \
 
 ```json
 {
+  "id": "675f3b5e9c8a6a1d2f3a4b5c",
   "profile": {
     "candidateProfile": {
       "fullName": "Alex Morgan",
@@ -228,6 +253,27 @@ curl -X POST "http://localhost:8000/api/resumes/parse" \
     "extractedTextCharacters": 6421,
     "jobDescriptionProvided": true
   }
+}
+```
+
+## Fetch Stored Resume
+
+```bash
+curl "http://localhost:8000/api/resumes/675f3b5e9c8a6a1d2f3a4b5c"
+```
+
+Stored MongoDB documents use this shape:
+
+```json
+{
+  "_id": "ObjectId",
+  "profile": {},
+  "metadata": {},
+  "source": {
+    "jobDescription": "optional submitted job description"
+  },
+  "createdAt": "datetime",
+  "updatedAt": "datetime"
 }
 ```
 

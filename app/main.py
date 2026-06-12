@@ -5,12 +5,17 @@ from fastapi.responses import JSONResponse
 
 from app.api.routes_resume import router as resume_router
 from app.core.config import get_settings
+from app.core.database import close_database, initialize_database
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     get_settings()
-    yield
+    await initialize_database()
+    try:
+        yield
+    finally:
+        close_database()
 
 
 settings = get_settings()
@@ -27,4 +32,3 @@ app.include_router(resume_router)
 @app.get("/health", tags=["system"])
 async def health() -> JSONResponse:
     return JSONResponse({"status": "ok", "service": settings.app_name})
-

@@ -193,5 +193,12 @@ class ResumeProfile(StrictBaseModel):
 
 
 class ResumeParseResponse(StrictBaseModel):
+    id: str
     profile: ResumeProfile
     metadata: dict[str, Any]
+
+
+class ResumeDocumentResponse(ResumeParseResponse):
+    source: dict[str, Any]
+    createdAt: str
+    updatedAt: str
