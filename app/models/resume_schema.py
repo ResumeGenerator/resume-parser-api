@@ -1,6 +1,6 @@
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class StrictBaseModel(BaseModel):
@@ -24,6 +24,13 @@ class CandidateProfile(StrictBaseModel):
     securityClearance: str | None = None
     visaStatusOrWorkAuthorization: str | None = None
     onlineProfiles: list[OnlineProfile] = Field(default_factory=list)
+
+    @field_validator("phone", mode="before")
+    @classmethod
+    def normalize_phone(cls, value: Any) -> Any:
+        if isinstance(value, list):
+            return ", ".join(str(item) for item in value if item not in (None, ""))
+        return value
 
 
 class CareerClassification(StrictBaseModel):
@@ -75,6 +82,13 @@ class WorkExperienceItem(StrictBaseModel):
     keywordsExtracted: list[str] = Field(default_factory=list)
     industryOrDomain: str = ""
 
+    @field_validator("startDate", "endDate", mode="before")
+    @classmethod
+    def normalize_dates(cls, value: Any) -> Any:
+        if isinstance(value, (int, float)):
+            return str(value)
+        return value
+
 
 class ProjectOrCaseStudy(StrictBaseModel):
     name: str = ""
@@ -90,6 +104,13 @@ class ProjectOrCaseStudy(StrictBaseModel):
     keyContributions: list[str] = Field(default_factory=list)
     businessOutcome: str = ""
     measurableImpact: str = ""
+
+    @field_validator("startDate", "endDate", mode="before")
+    @classmethod
+    def normalize_dates(cls, value: Any) -> Any:
+        if isinstance(value, (int, float)):
+            return str(value)
+        return value
 
 
 class Achievement(StrictBaseModel):
@@ -107,6 +128,13 @@ class EducationItem(StrictBaseModel):
     endDate: str | None = None
     gpa: str | float | None = None
     honors: list[str] = Field(default_factory=list)
+
+    @field_validator("endDate", mode="before")
+    @classmethod
+    def normalize_end_date(cls, value: Any) -> Any:
+        if isinstance(value, (int, float)):
+            return str(value)
+        return value
 
 
 class CertificationOrLicense(StrictBaseModel):
@@ -196,6 +224,21 @@ class ResumeParseResponse(StrictBaseModel):
     id: str
     profile: ResumeProfile
     metadata: dict[str, Any]
+
+
+class ResumeListItem(StrictBaseModel):
+    id: str
+    filename: str | None = None
+    candidateName: str = ""
+    candidateEmail: str = ""
+    currentTitle: str = ""
+    createdAt: str
+    updatedAt: str
+
+
+class ResumeListResponse(StrictBaseModel):
+    items: list[ResumeListItem] = Field(default_factory=list)
+    count: int
 
 
 class ResumeDocumentResponse(ResumeParseResponse):

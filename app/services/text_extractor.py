@@ -7,6 +7,11 @@ from fastapi import HTTPException, status
 from app.utils.text_cleaner import clean_resume_text
 
 
+def is_text_usable(text: str | None, min_length: int) -> bool:
+    """Check if extracted text meets minimum usability requirements."""
+    return text is not None and len(text.strip()) >= min_length
+
+
 def extract_text_from_pdf(content: bytes) -> str:
     try:
         with fitz.open(stream=content, filetype="pdf") as document:
@@ -62,11 +67,5 @@ def extract_resume_text(content: bytes, extension: str) -> str:
         )
 
     cleaned_text = clean_resume_text(raw_text)
-    if len(cleaned_text) < 40:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Resume text is empty or unreadable after extraction.",
-        )
-
     return cleaned_text
 

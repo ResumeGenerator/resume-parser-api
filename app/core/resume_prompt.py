@@ -31,7 +31,8 @@ CRITICAL RULES
    * safeRewriteSuggestions
 8. Return VALID JSON ONLY.
 9. No markdown.
-10. No explanatory text."""
+10. No explanatory text.
+11. Use strings for all phone and date fields. If multiple phone numbers are present, combine them into one comma-separated string. Do not return arrays for phone fields or numbers for date fields."""
 
 
 USER_PROMPT_TEMPLATE = """INPUT

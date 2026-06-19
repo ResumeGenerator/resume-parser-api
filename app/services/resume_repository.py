@@ -57,6 +57,23 @@ class MongoResumeRepository:
 
         return serialize_resume_document(document)
 
+    async def list_saved(self, limit: int = 100, skip: int = 0) -> list[dict[str, Any]]:
+        projection = {
+            "metadata.filename": 1,
+            "profile.candidateProfile.fullName": 1,
+            "profile.candidateProfile.email": 1,
+            "profile.candidateProfile.currentTitle": 1,
+            "createdAt": 1,
+            "updatedAt": 1,
+        }
+        cursor = (
+            self.collection.find({}, projection)
+            .sort("createdAt", -1)
+            .skip(skip)
+            .limit(limit)
+        )
+        return [serialize_resume_list_item(document) async for document in cursor]
+
     def close(self) -> None:
         self.client.close()
 
@@ -71,3 +88,26 @@ def serialize_resume_document(document: dict[str, Any]) -> dict[str, Any]:
             serialized[key] = value.isoformat()
 
     return serialized
+
+
+def serialize_resume_list_item(document: dict[str, Any]) -> dict[str, Any]:
+    candidate_profile = document.get("profile", {}).get("candidateProfile", {})
+    metadata = document.get("metadata", {})
+
+    return {
+        "id": str(document["_id"]),
+        "filename": metadata.get("filename"),
+        "candidateName": candidate_profile.get("fullName", ""),
+        "candidateEmail": candidate_profile.get("email", ""),
+        "currentTitle": candidate_profile.get("currentTitle", ""),
+        "createdAt": serialize_datetime(document.get("createdAt")),
+        "updatedAt": serialize_datetime(document.get("updatedAt")),
+    }
+
+
+def serialize_datetime(value: Any) -> str:
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if value is None:
+        return ""
+    return str(value)

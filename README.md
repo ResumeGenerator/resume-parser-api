@@ -13,6 +13,7 @@ FastAPI service for extracting structured resume data from uploaded PDF, DOCX, o
 - LLM integration through OpenAI
 - Pydantic validation for the parsed resume profile
 - Stores parsed resume documents in MongoDB
+- Lists saved resume summaries for UI binding
 
 ## Project Structure
 
@@ -72,6 +73,7 @@ docker run --env-file .env -p 8000:8000 resume-parser-service
 | --- | --- |
 | `APP_NAME` | FastAPI app name |
 | `MAX_FILE_SIZE_MB` | Maximum upload size in MB |
+| `CORS_ORIGINS` | Comma-separated allowed frontend origins |
 | `LLM_PROVIDER` | `openai` |
 | `OPENAI_API_KEY` | OpenAI API key |
 | `OPENAI_MODEL` | OpenAI chat model |
@@ -257,6 +259,14 @@ curl -X POST "http://localhost:8000/api/resumes/parse" \
 ```
 
 ## Fetch Stored Resume
+
+List saved resume summaries:
+
+```bash
+curl "http://localhost:8000/api/resumes"
+```
+
+Fetch a full saved resume by ID:
 
 ```bash
 curl "http://localhost:8000/api/resumes/675f3b5e9c8a6a1d2f3a4b5c"
