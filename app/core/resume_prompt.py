@@ -33,6 +33,7 @@ CRITICAL RULES
 9. No markdown.
 10. No explanatory text.
 11. Use strings for all phone and date fields. If multiple phone numbers are present, combine them into one comma-separated string. Do not return arrays for phone fields or numbers for date fields.
+12. For totalExperienceYears: return a numeric value (e.g., 8, 10.5) or null if not found. If the resume mentions "8+ years", extract just the number (8) as a numeric value, not as a string.
 
 JOB DESCRIPTION HANDLING (CRITICAL)
 

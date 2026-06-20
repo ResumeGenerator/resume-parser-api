@@ -32,6 +32,21 @@ class CandidateProfile(StrictBaseModel):
             return ", ".join(str(item) for item in value if item not in (None, ""))
         return value
 
+    @field_validator("totalExperienceYears", mode="before")
+    @classmethod
+    def parse_experience_years(cls, value: Any) -> Any:
+        if value is None or value == "":
+            return None
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str):
+            # Extract numeric part from strings like "8+", "10 years", "15+ years", etc.
+            import re
+            match = re.search(r"\d+(?:\.\d+)?", value)
+            if match:
+                return float(match.group(0))
+        return None
+
 
 class CareerClassification(StrictBaseModel):
     industry: str = ""
