@@ -153,8 +153,8 @@ OUTPUT JSON
 "technologies": [],
 "toolsAndMethodologiesUsed": [],
 "keyContributions": [],
-"businessOutcome": "",
-"measurableImpact": ""
+"businessOutcome": null,
+"measurableImpact": null
 }
 ],
 

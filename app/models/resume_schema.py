@@ -102,8 +102,8 @@ class ProjectOrCaseStudy(StrictBaseModel):
     technologies: list[str] = Field(default_factory=list)
     toolsAndMethodologiesUsed: list[str] = Field(default_factory=list)
     keyContributions: list[str] = Field(default_factory=list)
-    businessOutcome: str = ""
-    measurableImpact: str = ""
+    businessOutcome: str | None = None
+    measurableImpact: str | None = None
 
     @field_validator("startDate", "endDate", mode="before")
     @classmethod
