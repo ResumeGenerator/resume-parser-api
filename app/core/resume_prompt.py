@@ -32,7 +32,28 @@ CRITICAL RULES
 8. Return VALID JSON ONLY.
 9. No markdown.
 10. No explanatory text.
-11. Use strings for all phone and date fields. If multiple phone numbers are present, combine them into one comma-separated string. Do not return arrays for phone fields or numbers for date fields."""
+11. Use strings for all phone and date fields. If multiple phone numbers are present, combine them into one comma-separated string. Do not return arrays for phone fields or numbers for date fields.
+
+JOB DESCRIPTION HANDLING (CRITICAL)
+
+When a Target Job Description is provided:
+1. Extract and analyze required skills, qualifications, experience level, and domain from the job description
+2. Cross-reference the resume against these requirements
+3. In the "jobFitAnalysis" section:
+   * Calculate matchPercentage: how well the resume aligns with the job (0-100%)
+   * List skills from resume that match job requirements in "strongMatches"
+   * List skills that partially align in "partialMatches"
+   * List missing critical requirements in "missingRequirements"
+4. In "jobDescriptionKeywordMatches": extract keywords/skills from the job description that appear in the resume
+5. In "jobDescriptionKeywordGaps": extract keywords/skills from the job description that are NOT in the resume
+6. Order "workExperience" entries by relevance to the job description (most relevant first)
+7. In "resumeGenerationStrategy", prioritize suggestions that highlight job-matching experience and skills
+8. In "workExperience" achievements, emphasize metrics and outcomes most relevant to the job requirements
+
+When NO Target Job Description is provided:
+* Leave jobFitAnalysis fields empty or null
+* Process resume as a general career profile
+* Order work experience chronologically (most recent first)"""
 
 
 USER_PROMPT_TEMPLATE = """INPUT
