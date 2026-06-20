@@ -8,7 +8,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     app_name: str = Field(default="Resume Parser Service", alias="APP_NAME")
     max_file_size_mb: int = Field(default=5, alias="MAX_FILE_SIZE_MB")
-    cors_origins: str = Field(default="http://localhost:4200,http://127.0.0.1:4200", alias="CORS_ORIGINS")
+    cors_origins: str = Field(
+        default="http://localhost:4200,http://127.0.0.1:4200",
+        validation_alias=AliasChoices("CORS_ORIGINS", "ALLOWED_ORIGIN", "ALLOWED_ORIGINS"),
+    )
 
     llm_provider: str = Field(default="openai", alias="LLM_PROVIDER")
 
