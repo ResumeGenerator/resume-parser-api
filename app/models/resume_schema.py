@@ -1,6 +1,21 @@
 from typing import Any
+import re
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+def parse_optional_float(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        match = re.search(r"\d[\d,]*(?:\.\d+)?", value)
+        if match:
+            return float(match.group(0).replace(",", ""))
+    return None
 
 
 class StrictBaseModel(BaseModel):
@@ -35,17 +50,7 @@ class CandidateProfile(StrictBaseModel):
     @field_validator("totalExperienceYears", mode="before")
     @classmethod
     def parse_experience_years(cls, value: Any) -> Any:
-        if value is None or value == "":
-            return None
-        if isinstance(value, (int, float)):
-            return float(value)
-        if isinstance(value, str):
-            # Extract numeric part from strings like "8+", "10 years", "15+ years", etc.
-            import re
-            match = re.search(r"\d+(?:\.\d+)?", value)
-            if match:
-                return float(match.group(0))
-        return None
+        return parse_optional_float(value)
 
 
 class CareerClassification(StrictBaseModel):
