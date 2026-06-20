@@ -1,6 +1,7 @@
 import unittest
 
 from app.models.resume_schema import ResumeProfile
+from app.services.resume_parser import normalize_resume_profile_payload
 
 
 class ResumeSchemaTests(unittest.TestCase):
@@ -27,6 +28,13 @@ class ResumeSchemaTests(unittest.TestCase):
                     {"candidateProfile": {"totalExperienceYears": value}}
                 )
                 self.assertIsNone(profile.candidateProfile.totalExperienceYears)
+
+    def test_service_payload_normalizer_converts_total_experience_years(self) -> None:
+        payload = {"candidateProfile": {"totalExperienceYears": "8+"}}
+
+        normalized = normalize_resume_profile_payload(payload)
+
+        self.assertEqual(normalized["candidateProfile"]["totalExperienceYears"], 8.0)
 
 
 if __name__ == "__main__":

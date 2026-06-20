@@ -1,0 +1,40 @@
+services:
+  api:
+    image: resume-parser-api:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: resume-parser-api
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      MONGO_URI: mongodb://resume-parser-mongo:27017
+      MONGO_DATABASE: resume_parser
+      MONGO_COLLECTION: parsed_resumes
+      MONGO_EDITED_COLLECTION: edited_resumes
+    ports:
+      - "8000:8000"
+    depends_on:
+      - mongo
+    networks:
+      - resume-parser-dev
+
+  mongo:
+    image: mongo:7
+    container_name: resume-parser-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - resume_parser_mongo_data:/data/db
+    networks:
+      - resume-parser-dev
+
+volumes:
+  resume_parser_mongo_data:
+
+networks:
+  resume-parser-dev:
+    name: resume-parser-dev
+    external: true

@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from app.core.config import Settings, get_settings
 from app.core.database import get_resume_repository
 from app.core.llm_client import get_llm_client
-from app.models.resume_schema import ResumeDocumentResponse, ResumeListResponse, ResumeParseResponse
+from app.models.resume_schema import ResumeDocumentResponse, ResumeEditRequest, ResumeListResponse, ResumeParseResponse
 from app.services.document_text_extractor import DocumentTextExtractor
 from app.services.resume_parser import ResumeParserService
 from app.services.resume_repository import ResumeRepositoryNotConfiguredError
@@ -80,6 +80,11 @@ async def list_resumes(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(exc),
         ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="MongoDB is configured but unavailable. Check MONGO_URI and the MongoDB container.",
+        ) from exc
 
     return ResumeListResponse(items=items, count=len(items))
 
@@ -97,11 +102,63 @@ async def get_resume(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(exc),
         ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="MongoDB is configured but unavailable. Check MONGO_URI and the MongoDB container.",
+        ) from exc
 
     if document is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Parsed resume was not found.",
         )
+
+    return ResumeDocumentResponse.model_validate(document)
+
+
+@router.post("/{resume_id}/edits", response_model=ResumeDocumentResponse, status_code=status.HTTP_201_CREATED)
+async def save_resume_edit(
+    resume_id: str,
+    request: ResumeEditRequest,
+    settings: Settings = Depends(get_settings),
+) -> ResumeDocumentResponse:
+    try:
+        repository = get_resume_repository(settings)
+        original_document = await repository.get_by_id(resume_id)
+    except ResumeRepositoryNotConfiguredError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="MongoDB is configured but unavailable. Check MONGO_URI and the MongoDB container.",
+        ) from exc
+
+    if original_document is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Original parsed resume was not found.",
+        )
+
+    source = {
+        **request.source,
+        "editedFromResumeId": resume_id,
+    }
+
+    try:
+        document = await repository.save_edited_copy(
+            original_resume_id=resume_id,
+            profile=request.profile,
+            metadata=request.metadata,
+            source=source,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
 
     return ResumeDocumentResponse.model_validate(document)

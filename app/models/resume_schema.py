@@ -265,3 +265,10 @@ class ResumeDocumentResponse(ResumeParseResponse):
     source: dict[str, Any]
     createdAt: str
     updatedAt: str
+    originalResumeId: str | None = None
+
+
+class ResumeEditRequest(StrictBaseModel):
+    profile: ResumeProfile
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    source: dict[str, Any] = Field(default_factory=dict)

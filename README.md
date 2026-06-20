@@ -80,6 +80,7 @@ docker run --env-file .env -p 8000:8000 resume-parser-service
 | `MONGO_URI` | MongoDB connection URI; `MONGODB_URI` and `MONGO_URL` are also accepted |
 | `MONGO_DATABASE` | MongoDB database name; `MONGO_DB` and `MONGODB_DATABASE` are also accepted |
 | `MONGO_COLLECTION` | Collection for parsed resumes; `MONGODB_RESUME_COLLECTION` is also accepted |
+| `MONGO_EDITED_COLLECTION` | Collection for edited resume copies; `MONGODB_EDITED_RESUME_COLLECTION` is also accepted |
 
 ## Railway Deployment
 
@@ -90,6 +91,7 @@ OPENAI_API_KEY=...
 MONGO_URI=...
 MONGO_DATABASE=resume_parser
 MONGO_COLLECTION=parsed_resumes
+MONGO_EDITED_COLLECTION=edited_resumes
 ```
 
 The Dockerfile uses Railway's `PORT` environment variable automatically:

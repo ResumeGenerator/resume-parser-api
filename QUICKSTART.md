@@ -166,6 +166,7 @@ docker build -t resume-parser:ocr .
 docker run -p 8000:8000 \
   -e OCR_FALLBACK_ENABLED=true \
   -e OPENAI_API_KEY=sk-... \
+  -e MONGO_EDITED_COLLECTION=edited_resumes \
   resume-parser:ocr
 ```
 

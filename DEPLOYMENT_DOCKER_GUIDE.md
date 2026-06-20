@@ -55,6 +55,7 @@ docker run -p 8000:8000 \
   -e OCR_DPI=200 \
   -e OPENAI_API_KEY=sk-... \
   -e MONGO_URI=mongodb://mongo:27017 \
+  -e MONGO_EDITED_COLLECTION=edited_resumes \
   resume-parser-ocr:latest
 
 # Or use docker-compose (see below)
@@ -75,7 +76,7 @@ services:
     environment:
       APP_NAME: Resume Parser Service
       MAX_FILE_SIZE_MB: 5
-      CORS_ORIGINS: "http://localhost:4200,http://127.0.0.1:4200"
+      CORS_ORIGINS: "http://localhost:4200,http://127.0.0.1:4200,http://localhost:4300,http://127.0.0.1:4300"
       
       # LLM Configuration
       LLM_PROVIDER: openai
@@ -86,6 +87,7 @@ services:
       MONGO_URI: mongodb://mongo:27017
       MONGO_DATABASE: resume_parser
       MONGO_COLLECTION: parsed_resumes
+      MONGO_EDITED_COLLECTION: edited_resumes
       
       # OCR Fallback Configuration
       OCR_FALLBACK_ENABLED: "true"
