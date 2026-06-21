@@ -12,7 +12,7 @@ class Settings(BaseSettings):
         default="http://localhost:4200,http://127.0.0.1:4200",
         validation_alias=AliasChoices("CORS_ORIGINS", "ALLOWED_ORIGIN", "ALLOWED_ORIGINS"),
     )
-
+    print('Parser Allowed Origins',cors_origins)
     llm_provider: str = Field(default="openai", alias="LLM_PROVIDER")
 
     openai_api_key: str | None = Field(default=None, validation_alias=AliasChoices("OPENAI_API_KEY", "OPENAI_KEY"))
