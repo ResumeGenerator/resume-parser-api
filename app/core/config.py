@@ -9,10 +9,10 @@ class Settings(BaseSettings):
     app_name: str = Field(default="Resume Parser Service", alias="APP_NAME")
     max_file_size_mb: int = Field(default=5, alias="MAX_FILE_SIZE_MB")
     cors_origins: str = Field(
-        default="http://localhost:4200,http://127.0.0.1:4200",
+        default="http://localhost:4200,http://127.0.0.1:4200,https://resume-generator-spa-staging.up.railway.app",
         validation_alias=AliasChoices("CORS_ORIGINS", "ALLOWED_ORIGIN", "ALLOWED_ORIGINS"),
     )
-
+    print('Parser Allowed Origins',cors_origins)
     llm_provider: str = Field(default="openai", alias="LLM_PROVIDER")
 
     openai_api_key: str | None = Field(default=None, validation_alias=AliasChoices("OPENAI_API_KEY", "OPENAI_KEY"))
