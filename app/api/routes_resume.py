@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 
 from app.core.config import Settings, get_settings
@@ -16,6 +18,8 @@ from app.services.resume_parser import ResumeParserService
 from app.services.resume_repository import ResumeRepositoryNotConfiguredError
 from app.utils.file_validator import read_and_validate_file
 from app.utils.resume_detector import validate_resume_document
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/resumes", tags=["resumes"])
 
@@ -64,6 +68,12 @@ async def parse_resume(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        logger.exception("Failed to save parsed resume to MongoDB.")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="MongoDB is configured but failed to save the parsed resume. Check MONGO_URI, database, collection, and write permissions.",
         ) from exc
 
     return ResumeParseResponse(

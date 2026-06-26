@@ -1,3 +1,4 @@
+import logging
 from datetime import UTC, datetime
 from typing import Any
 
@@ -7,6 +8,8 @@ from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorCollection
 from app.core.config import Settings
 from app.models.resume_schema import ResumeProfile, ResumeTemplateSaveRequest
 from app.services.resume_preview import build_resume_preview_html
+
+logger = logging.getLogger(__name__)
 
 
 class ResumeRepositoryNotConfiguredError(RuntimeError):
@@ -65,6 +68,13 @@ class MongoResumeRepository:
             "updatedAt": now,
         }
         result = await self.collection.insert_one(document)
+        logger.info(
+            "Saved parsed resume to MongoDB database=%r collection=%r resume_id=%s inserted_id=%s",
+            self.database_name,
+            self.collection_name,
+            resume_id,
+            result.inserted_id,
+        )
         return str(result.inserted_id)
 
     async def get_by_id(self, resume_id: str) -> dict[str, Any] | None:
