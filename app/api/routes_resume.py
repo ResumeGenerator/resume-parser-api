@@ -70,6 +70,9 @@ async def parse_resume(
         id=resume_id,
         profile=profile,
         metadata=metadata,
+        resumeId=resume_id,
+        version=1,
+        status="parsed",
     )
 
 

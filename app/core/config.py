@@ -33,10 +33,6 @@ class Settings(BaseSettings):
         default="parsed_resumes",
         validation_alias=AliasChoices("MONGO_COLLECTION", "MONGODB_RESUME_COLLECTION"),
     )
-    mongodb_edited_resume_collection: str = Field(
-        default="edited_resumes",
-        validation_alias=AliasChoices("MONGODB_EDITED_RESUME_COLLECTION", "MONGO_EDITED_COLLECTION"),
-    )
     mongodb_template_resume_collection: str = Field(
         default="template_resumes",
         validation_alias=AliasChoices("MONGODB_TEMPLATE_RESUME_COLLECTION", "MONGO_TEMPLATE_COLLECTION"),

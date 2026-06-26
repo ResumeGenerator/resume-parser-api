@@ -80,8 +80,7 @@ docker run --env-file .env -p 8000:8000 resume-parser-service
 | `OPENAI_MODEL` | OpenAI chat model |
 | `MONGO_URI` | MongoDB connection URI; `MONGODB_URI` and `MONGO_URL` are also accepted |
 | `MONGO_DATABASE` | MongoDB database name; `MONGO_DB` and `MONGODB_DATABASE` are also accepted |
-| `MONGO_COLLECTION` | Collection for parsed resumes; `MONGODB_RESUME_COLLECTION` is also accepted |
-| `MONGO_EDITED_COLLECTION` | Collection for edited resume copies; `MONGODB_EDITED_RESUME_COLLECTION` is also accepted |
+| `MONGO_COLLECTION` | Collection for parsed and edited resume versions; `MONGODB_RESUME_COLLECTION` is also accepted |
 | `MONGO_TEMPLATE_COLLECTION` | Collection for rendered/template resume payloads; `MONGODB_TEMPLATE_RESUME_COLLECTION` is also accepted |
 
 ## Railway Deployment
@@ -93,7 +92,6 @@ OPENAI_API_KEY=...
 MONGO_URI=...
 MONGO_DATABASE=resume_parser
 MONGO_COLLECTION=parsed_resumes
-MONGO_EDITED_COLLECTION=edited_resumes
 MONGO_TEMPLATE_COLLECTION=template_resumes
 ```
 
@@ -118,140 +116,65 @@ curl -X POST "http://localhost:8000/api/resumes/parse" \
 ```json
 {
   "id": "675f3b5e9c8a6a1d2f3a4b5c",
+  "resumeId": "675f3b5e9c8a6a1d2f3a4b5c",
+  "version": 1,
+  "status": "parsed",
   "profile": {
-    "candidateProfile": {
-      "fullName": "Alex Morgan",
-      "email": "alex@example.com",
-      "phone": "+1 555 0100",
+    "template": "strassburg",
+    "format": "html",
+    "data": {
+      "name": "Alex Morgan",
+      "title": "Python Backend Engineer",
       "location": "Austin, TX",
-      "currentTitle": "Python Backend Engineer",
-      "professionalHeadline": "Backend engineer with FastAPI and cloud API experience",
-      "totalExperienceYears": 8,
-      "targetRole": null,
-      "securityClearance": null,
-      "visaStatusOrWorkAuthorization": null,
-      "onlineProfiles": [
+      "phone": "+1 555 0100",
+      "email": "alex@example.com",
+      "summary": "Backend engineer with experience building FastAPI services and cloud-native APIs.",
+      "dateOfBirth": "",
+      "gender": "",
+      "nationality": "",
+      "documentDate": "",
+      "address": "",
+      "postalCode": "",
+      "secondaryAddress": null,
+      "sections": [
         {
-          "platform": "LinkedIn",
-          "url": "https://www.linkedin.com/in/alexmorgan"
+          "title": "Professional summary",
+          "type": "summary",
+          "items": "Backend engineer with experience building FastAPI services and cloud-native APIs."
+        },
+        {
+          "title": "Work experience",
+          "type": "experience",
+          "items": [
+            {
+              "position": "Senior Backend Engineer",
+              "company": "Example SaaS Co",
+              "location": "Austin, TX",
+              "jobType": "",
+              "reasonForLeaving": "",
+              "start": "2020",
+              "end": "",
+              "achievements": ["Built and maintained FastAPI services.", "Reduced API latency by 35%."]
+            }
+          ]
+        },
+        {
+          "title": "Skills",
+          "type": "skill",
+          "items": [
+            { "name": "Python", "level": "" },
+            { "name": "FastAPI", "level": "" },
+            { "name": "Docker", "level": "" }
+          ]
         }
       ]
     },
-    "careerClassification": {
-      "industry": "Technology",
-      "jobFamily": "Software Engineering",
-      "subSpecialization": "Backend Engineering",
-      "seniorityLevel": "Senior"
-    },
-    "careerProgression": {
-      "careerLevel": "Senior",
-      "industryFocus": ["SaaS", "FinTech"],
-      "primarySpecialization": ["Backend APIs"],
-      "secondarySpecialization": ["Cloud services"]
-    },
-    "professionalSummaryPoints": [
-      "Backend engineer with experience building FastAPI services and cloud-native APIs."
-    ],
-    "coreSkills": {
-      "hardSkills": ["Python", "REST APIs"],
-      "toolsAndSoftware": ["Docker", "PostgreSQL"],
-      "methodologiesAndFrameworks": ["Agile"],
-      "industryKnowledge": ["SaaS"],
-      "softSkills": ["Cross-functional collaboration"],
-      "languages": []
-    },
-    "skillsMatrix": {
-      "programmingLanguages": ["Python"],
-      "frameworks": ["FastAPI"],
-      "cloudPlatforms": ["AWS"],
-      "databases": ["PostgreSQL"],
-      "devOpsTools": ["Docker"],
-      "testingTools": [],
-      "businessTools": [],
-      "industryTools": []
-    },
-    "workExperience": [
-      {
-        "companyOrOrganization": "Example SaaS Co",
-        "role": "Senior Backend Engineer",
-        "location": "Austin, TX",
-        "startDate": "2020",
-        "endDate": null,
-        "isCurrent": true,
-        "employmentType": null,
-        "managementLevel": null,
-        "responsibilities": ["Built and maintained FastAPI services."],
-        "achievements": ["Reduced API latency by 35%."],
-        "toolsAndTaxonomiesUsed": ["Python", "FastAPI", "Docker"],
-        "keywordsExtracted": ["Python", "FastAPI", "REST APIs"],
-        "industryOrDomain": "SaaS"
-      }
-    ],
-    "projectsOrCaseStudies": [],
-    "achievementBank": [
-      {
-        "achievement": "Reduced API latency by 35%",
-        "category": "Performance",
-        "sourceCompany": "Example SaaS Co",
-        "year": null
-      }
-    ],
-    "education": [],
-    "certificationsAndLicenses": [],
-    "affiliationsAndMemberships": [],
-    "awardsAndRecognition": [],
-    "volunteerExperience": [],
-    "publicationsAndSpeaking": [],
-    "resumeBlocks": {
-      "executiveSummary": ["Backend engineer focused on reliable, scalable API systems."],
-      "technicalHighlights": ["Python, FastAPI, Docker, AWS, PostgreSQL"],
-      "leadershipHighlights": [],
-      "projectHighlights": [],
-      "industryHighlights": ["SaaS API platforms"]
-    },
-    "recommendedResumeVariants": [
-      {
-        "name": "Backend API Engineer",
-        "confidence": 0.86
-      }
-    ],
-    "atsAnalysis": {
-      "estimatedAtsScore": 82,
-      "keywordDensity": [
-        {
-          "keyword": "Python",
-          "count": 4
-        }
-      ],
-      "missingCriticalSections": [],
-      "formattingRisks": [],
-      "duplicateSkills": []
-    },
-    "jobFitAnalysis": {
-      "matchPercentage": 78,
-      "strongMatches": ["Python", "FastAPI", "Docker"],
-      "partialMatches": ["Cloud experience"],
-      "missingRequirements": ["LLM integration"]
-    },
-    "resumeStrengths": ["Clear backend engineering focus"],
-    "missingOrWeakAreas": ["Some achievements lack metrics"],
-    "atsKeywordsFound": ["Python", "FastAPI", "Docker"],
-    "jobDescriptionKeywordMatches": ["Python", "FastAPI"],
-    "jobDescriptionKeywordGaps": ["LLM integration"],
-    "resumeGenerationStrategy": {
-      "standardAtsVersion": ["Prioritize summary, skills, and experience sections."],
-      "performanceAndMetricsDrivenVersion": ["Emphasize the stated 35% latency reduction."],
-      "leadershipOrSpecialistVersion": [],
-      "functionalOrCareerChangeVersion": []
-    },
-    "safeRewriteSuggestions": [
-      {
-        "category": "Experience bullet",
-        "originalPoint": "Worked on APIs",
-        "improvedPoint": "Built and maintained FastAPI services supporting production workflows.",
-        "reason": "Adds clarity without inventing metrics."
-      }
-    ]
+    "font": "Times New Roman",
+    "color": "#000000",
+    "withPhoto": false,
+    "avatar": null,
+    "contactsTitle": "Contacts",
+    "detailsTitle": "Details"
   },
   "metadata": {
     "filename": "resume.pdf",
@@ -303,6 +226,8 @@ curl -X POST "http://localhost:8000/api/resumes/675f3b5e9c8a6a1d2f3a4b5c/templat
   }'
 ```
 
+The `POST /api/resumes/{resume_id}/templates` and `POST /api/resumes/{resume_id}/edits` responses include `previewHtml` so the UI can immediately render the saved or edited resume preview.
+
 Fetch the latest rendered/template resume payload:
 
 ```bash
@@ -314,6 +239,9 @@ Stored MongoDB documents use this shape:
 ```json
 {
   "_id": "ObjectId",
+  "resumeId": "675f3b5e9c8a6a1d2f3a4b5c",
+  "version": 1,
+  "status": "parsed",
   "profile": {},
   "metadata": {},
   "source": {
@@ -342,9 +270,7 @@ Template resume MongoDB documents use this shape:
 
 The returned JSON is intentionally shaped for a downstream resume generation service:
 
-- `candidateProfile`, `education`, and `certificationsAndLicenses` can populate fixed resume sections.
-- `achievementBank` gives reusable impact bullets that can be selected per target role.
-- `resumeBlocks` provides prebuilt blocks for headline, summary, skills, projects, and experience sections.
-- `recommendedResumeVariants` can drive different generated versions for different target roles.
-- `atsAnalysis`, keyword matches, and keyword gaps can guide ATS optimization before rendering DOCX/PDF.
-- `safeRewriteSuggestions` identifies truthful improvements without fabricating responsibilities, credentials, or metrics.
+- Root fields such as `template`, `format`, `font`, `color`, `withPhoto`, `contactsTitle`, and `detailsTitle` can be passed directly to the renderer.
+- `data.name`, `data.title`, `data.location`, `data.phone`, `data.email`, and `data.summary` populate the resume header and summary.
+- `data.sections` contains renderer-ready sections for summary, experience, education, skills, courses, languages, references, links, internships, and hobbies.
+- Section `items` are shaped for the renderer and remain strict at the top-level API boundary.

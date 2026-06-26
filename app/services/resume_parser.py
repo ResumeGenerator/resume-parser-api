@@ -2,18 +2,16 @@ from fastapi import HTTPException, status
 from pydantic import ValidationError
 
 from app.core.llm_client import BaseLLMClient
-from app.models.resume_schema import ResumeProfile, parse_optional_float
+from app.models.resume_schema import ResumeProfile
 
 
 def normalize_resume_profile_payload(raw_profile: object) -> object:
     if not isinstance(raw_profile, dict):
         return raw_profile
 
-    candidate_profile = raw_profile.get("candidateProfile")
-    if isinstance(candidate_profile, dict) and "totalExperienceYears" in candidate_profile:
-        candidate_profile["totalExperienceYears"] = parse_optional_float(
-            candidate_profile["totalExperienceYears"]
-        )
+    wrapped_profile = raw_profile.get("profile")
+    if isinstance(wrapped_profile, dict):
+        return wrapped_profile
 
     return raw_profile
 

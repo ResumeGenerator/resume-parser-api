@@ -102,12 +102,21 @@ The API response now includes extraction metadata:
 {
   "id": "resume_12345",
   "profile": {
-    "fullName": "John Doe",
-    "email": "john@example.com",
-    "phone": "+1-555-0000",
-    "experience": [ /* ... */ ],
-    "education": [ /* ... */ ],
-    "skills": [ /* ... */ ]
+    "template": "strassburg",
+    "format": "html",
+    "data": {
+      "name": "John Doe",
+      "title": "Software Engineer",
+      "email": "john@example.com",
+      "phone": "+1-555-0000",
+      "sections": [ /* renderer-ready resume sections */ ]
+    },
+    "font": "Times New Roman",
+    "color": "#000000",
+    "withPhoto": false,
+    "avatar": null,
+    "contactsTitle": "Contacts",
+    "detailsTitle": "Details"
   },
   "metadata": {
     "filename": "john_doe_resume.pdf",
