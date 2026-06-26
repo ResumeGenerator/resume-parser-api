@@ -1,6 +1,8 @@
 import unittest
 
-from app.models.resume_schema import ResumeProfile
+from pydantic import ValidationError
+
+from app.models.resume_schema import ResumeProfile, ResumeTemplateSaveRequest
 from app.services.resume_parser import normalize_resume_profile_payload
 
 
@@ -35,6 +37,84 @@ class ResumeSchemaTests(unittest.TestCase):
         normalized = normalize_resume_profile_payload(payload)
 
         self.assertEqual(normalized["candidateProfile"]["totalExperienceYears"], 8.0)
+
+    def test_template_resume_payload_accepts_renderer_shape(self) -> None:
+        payload = {
+            "template": "sydney",
+            "format": "html",
+            "data": {
+                "name": "Biju Manayagaths",
+                "title": "Solution Architect s",
+                "location": "Doha,   Doha, Qatar,",
+                "phone": "+97474452435",
+                "email": "bijum777@gmail.com",
+                "summary": "Senior Engineer with expertise in designing scalable system architectures.",
+                "dateOfBirth": "",
+                "gender": "",
+                "nationality": "",
+                "documentDate": "",
+                "address": "",
+                "postalCode": "",
+                "secondaryAddress": None,
+                "sections": [
+                    {
+                        "title": "Professional summary",
+                        "type": "summary",
+                        "items": "Senior Engineer with expertise in designing scalable system architectures.",
+                    },
+                    {
+                        "title": "Work experience",
+                        "type": "experience",
+                        "items": [
+                            {
+                                "position": "Senior Engineer",
+                                "company": "Lexis Nexis",
+                                "location": "London",
+                                "jobType": "",
+                                "reasonForLeaving": "",
+                                "start": "Apr 2026",
+                                "end": "May 2026",
+                                "achievements": [
+                                    "Designed and implemented scalable system architectures.",
+                                ],
+                            }
+                        ],
+                    },
+                    {
+                        "title": "Skills",
+                        "type": "skill",
+                        "items": [
+                            {"name": "Development", "level": "Beginner"},
+                            {"name": "Cloud computing", "level": "Intermediate"},
+                        ],
+                    },
+                ],
+            },
+            "font": "Arial",
+            "color": "#000000",
+            "withPhoto": True,
+            "avatar": "https://example.com/avatar.png?v=1782462038256",
+            "contactsTitle": "Contacts",
+            "detailsTitle": "Details",
+        }
+
+        request = ResumeTemplateSaveRequest.model_validate(payload)
+
+        self.assertEqual(request.template, "sydney")
+        self.assertEqual(request.data.email, "bijum777@gmail.com")
+        self.assertEqual(request.data.sections[0].items, payload["data"]["sections"][0]["items"])
+        self.assertEqual(request.data.sections[1].items[0]["company"], "Lexis Nexis")
+
+    def test_template_resume_payload_forbids_unexpected_top_level_fields(self) -> None:
+        payload = {
+            "template": "sydney",
+            "format": "html",
+            "data": {"sections": []},
+            "unexpected": True,
+        }
+
+        with self.assertRaises(ValidationError):
+            ResumeTemplateSaveRequest.model_validate(payload)
 
 
 if __name__ == "__main__":

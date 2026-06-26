@@ -5,7 +5,7 @@ from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorCollection
 
 from app.core.config import Settings
-from app.models.resume_schema import ResumeProfile
+from app.models.resume_schema import ResumeProfile, ResumeTemplateSaveRequest
 
 
 class ResumeRepositoryNotConfiguredError(RuntimeError):
@@ -26,6 +26,8 @@ class MongoResumeRepository:
         self.collection: AsyncIOMotorCollection = self.client[self.database_name][self.collection_name]
         self.edited_collection_name = settings.mongodb_edited_resume_collection
         self.edited_collection: AsyncIOMotorCollection = self.client[self.database_name][self.edited_collection_name]
+        self.template_collection_name = settings.mongodb_template_resume_collection
+        self.template_collection: AsyncIOMotorCollection = self.client[self.database_name][self.template_collection_name]
 
     async def initialize(self) -> None:
         await self.client.admin.command("ping")
@@ -35,6 +37,10 @@ class MongoResumeRepository:
         await self.edited_collection.create_index("createdAt")
         await self.edited_collection.create_index("originalResumeId")
         await self.edited_collection.create_index("profile.candidateProfile.email")
+        await self.template_collection.create_index("createdAt")
+        await self.template_collection.create_index("originalResumeId")
+        await self.template_collection.create_index("templateResume.template")
+        await self.template_collection.create_index("templateResume.data.email")
 
     async def save(
         self,
@@ -98,6 +104,49 @@ class MongoResumeRepository:
         saved_document = await self.edited_collection.find_one({"_id": result.inserted_id})
 
         return serialize_resume_document(saved_document or document | {"_id": result.inserted_id})
+
+    async def save_template_resume(
+        self,
+        original_resume_id: str,
+        template_resume: ResumeTemplateSaveRequest,
+    ) -> dict[str, Any]:
+        if not ObjectId.is_valid(original_resume_id):
+            raise ValueError("Original resume id is not valid.")
+
+        now = datetime.now(UTC)
+        metadata = {
+            **template_resume.metadata,
+            "template": template_resume.template,
+            "format": template_resume.format,
+            "originalResumeId": original_resume_id,
+        }
+        source = {
+            **template_resume.source,
+            "originalResumeId": original_resume_id,
+        }
+        document = {
+            "originalResumeId": original_resume_id,
+            "templateResume": template_resume.model_dump(mode="json"),
+            "metadata": metadata,
+            "source": source,
+            "createdAt": now,
+            "updatedAt": now,
+        }
+        result = await self.template_collection.insert_one(document)
+        saved_document = await self.template_collection.find_one({"_id": result.inserted_id})
+
+        return serialize_resume_document(saved_document or document | {"_id": result.inserted_id})
+
+    async def get_latest_template_resume(self, original_resume_id: str) -> dict[str, Any] | None:
+        if not ObjectId.is_valid(original_resume_id):
+            return None
+
+        document = await self.template_collection.find_one(
+            {"originalResumeId": original_resume_id},
+            sort=[("updatedAt", -1), ("createdAt", -1)],
+        )
+
+        return serialize_resume_document(document) if document is not None else None
 
     async def list_saved(self, limit: int = 100, skip: int = 0) -> list[dict[str, Any]]:
         projection = {

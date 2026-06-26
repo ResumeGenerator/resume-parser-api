@@ -37,6 +37,10 @@ class Settings(BaseSettings):
         default="edited_resumes",
         validation_alias=AliasChoices("MONGODB_EDITED_RESUME_COLLECTION", "MONGO_EDITED_COLLECTION"),
     )
+    mongodb_template_resume_collection: str = Field(
+        default="template_resumes",
+        validation_alias=AliasChoices("MONGODB_TEMPLATE_RESUME_COLLECTION", "MONGO_TEMPLATE_COLLECTION"),
+    )
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

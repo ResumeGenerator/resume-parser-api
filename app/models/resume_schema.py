@@ -295,3 +295,79 @@ class ResumeEditRequest(StrictBaseModel):
     profile: ResumeProfile
     metadata: dict[str, Any] = Field(default_factory=dict)
     source: dict[str, Any] = Field(default_factory=dict)
+
+
+class TemplateResumeSection(StrictBaseModel):
+    title: str = ""
+    type: str = ""
+    items: str | list[dict[str, Any]] = Field(default_factory=list)
+
+    @field_validator("title", "type", mode="before")
+    @classmethod
+    def normalize_strings(cls, value: Any) -> str:
+        return normalize_optional_string(value)
+
+
+class TemplateResumeData(StrictBaseModel):
+    name: str = ""
+    title: str = ""
+    location: str = ""
+    phone: str = ""
+    email: str = ""
+    summary: str = ""
+    dateOfBirth: str = ""
+    gender: str = ""
+    nationality: str = ""
+    documentDate: str = ""
+    address: str = ""
+    postalCode: str = ""
+    secondaryAddress: str | None = None
+    sections: list[TemplateResumeSection] = Field(default_factory=list)
+
+    @field_validator(
+        "name",
+        "title",
+        "location",
+        "phone",
+        "email",
+        "summary",
+        "dateOfBirth",
+        "gender",
+        "nationality",
+        "documentDate",
+        "address",
+        "postalCode",
+        mode="before",
+    )
+    @classmethod
+    def normalize_strings(cls, value: Any) -> str:
+        return normalize_optional_string(value)
+
+
+class ResumeTemplateSaveRequest(StrictBaseModel):
+    template: str = ""
+    format: str = ""
+    data: TemplateResumeData = Field(default_factory=TemplateResumeData)
+    font: str = ""
+    color: str = ""
+    withPhoto: bool = False
+    avatar: str | None = None
+    contactsTitle: str = ""
+    detailsTitle: str = ""
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    source: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("template", "format", "font", "color", "contactsTitle", "detailsTitle", mode="before")
+    @classmethod
+    def normalize_strings(cls, value: Any) -> str:
+        return normalize_optional_string(value)
+
+
+class ResumeTemplateDocumentResponse(StrictBaseModel):
+    id: str
+    originalResumeId: str
+    templateResume: ResumeTemplateSaveRequest
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    source: dict[str, Any] = Field(default_factory=dict)
+    createdAt: str
+    updatedAt: str

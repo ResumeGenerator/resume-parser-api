@@ -3,7 +3,14 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from app.core.config import Settings, get_settings
 from app.core.database import get_resume_repository
 from app.core.llm_client import get_llm_client
-from app.models.resume_schema import ResumeDocumentResponse, ResumeEditRequest, ResumeListResponse, ResumeParseResponse
+from app.models.resume_schema import (
+    ResumeDocumentResponse,
+    ResumeEditRequest,
+    ResumeListResponse,
+    ResumeParseResponse,
+    ResumeTemplateDocumentResponse,
+    ResumeTemplateSaveRequest,
+)
 from app.services.document_text_extractor import DocumentTextExtractor
 from app.services.resume_parser import ResumeParserService
 from app.services.resume_repository import ResumeRepositoryNotConfiguredError
@@ -115,6 +122,74 @@ async def get_resume(
         )
 
     return ResumeDocumentResponse.model_validate(document)
+
+
+@router.get("/{resume_id}/templates/latest", response_model=ResumeTemplateDocumentResponse)
+async def get_latest_resume_template(
+    resume_id: str,
+    settings: Settings = Depends(get_settings),
+) -> ResumeTemplateDocumentResponse:
+    try:
+        repository = get_resume_repository(settings)
+        document = await repository.get_latest_template_resume(resume_id)
+    except ResumeRepositoryNotConfiguredError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="MongoDB is configured but unavailable. Check MONGO_URI and the MongoDB container.",
+        ) from exc
+
+    if document is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Template resume was not found.",
+        )
+
+    return ResumeTemplateDocumentResponse.model_validate(document)
+
+
+@router.post("/{resume_id}/templates", response_model=ResumeTemplateDocumentResponse, status_code=status.HTTP_201_CREATED)
+async def save_resume_template(
+    resume_id: str,
+    request: ResumeTemplateSaveRequest,
+    settings: Settings = Depends(get_settings),
+) -> ResumeTemplateDocumentResponse:
+    try:
+        repository = get_resume_repository(settings)
+        original_document = await repository.get_by_id(resume_id)
+    except ResumeRepositoryNotConfiguredError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="MongoDB is configured but unavailable. Check MONGO_URI and the MongoDB container.",
+        ) from exc
+
+    if original_document is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Original parsed resume was not found.",
+        )
+
+    try:
+        document = await repository.save_template_resume(
+            original_resume_id=resume_id,
+            template_resume=request,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+    return ResumeTemplateDocumentResponse.model_validate(document)
 
 
 @router.post("/{resume_id}/edits", response_model=ResumeDocumentResponse, status_code=status.HTTP_201_CREATED)

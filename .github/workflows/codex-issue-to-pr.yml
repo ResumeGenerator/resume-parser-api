@@ -1,6 +1,8 @@
 name: OpenAI issue to PR
 
 on:
+  repository_dispatch:
+    types: [orchestrator_issue]
   issues:
     types: [opened, edited, reopened]
   workflow_dispatch:
@@ -18,6 +20,10 @@ permissions:
 jobs:
   openai_issue_to_pr:
     runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'repository_dispatch' ||
+      (github.event_name == 'issues' && github.event.issue.pull_request == null)
     outputs:
       final_message: ${{ steps.run_codex.outputs.final-message }}
 
@@ -31,14 +37,69 @@ jobs:
         id: issue
         uses: actions/github-script@v7
         with:
+          github-token: ${{ github.token }}
           script: |
-            const issueNumber = context.eventName === 'workflow_dispatch'
-              ? Number(context.payload.inputs.issue_number)
-              : context.payload.issue.number;
+            const isObject = (value) =>
+              value !== null && typeof value === 'object' && !Array.isArray(value);
+
+            const payload = isObject(context.payload) ? context.payload : {};
+            const clientPayload = isObject(payload.client_payload) ? payload.client_payload : {};
+            const payloadIssue = isObject(payload.issue) ? payload.issue : {};
+            const clientIssue = isObject(clientPayload.issue) ? clientPayload.issue : {};
+            const rawIssueNumber =
+              payload.inputs?.issue_number ??
+              payloadIssue.number ??
+              clientPayload.issue_number ??
+              clientIssue.number ??
+              (!isObject(clientPayload.issue) ? clientPayload.issue : undefined) ??
+              clientPayload.orchestrator_issue_number;
+
+            const issueNumber = Number(rawIssueNumber);
+            if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
+              core.setFailed(
+                `Could not resolve a valid issue number. ` +
+                `Event: ${context.eventName}. ` +
+                `For manual runs, pass the issue_number workflow input. ` +
+                `For repository_dispatch, send client_payload.issue_number or client_payload.issue.number.`
+              );
+              return;
+            }
+
+            if (context.eventName === 'repository_dispatch') {
+              const issueRepository =
+                clientPayload.issue_repository ||
+                clientPayload.source_repository ||
+                clientPayload.repository ||
+                clientPayload.orchestrator_repo ||
+                `${context.repo.owner}/${context.repo.repo}`;
+
+              core.setOutput('number', String(issueNumber));
+              core.setOutput('title', clientIssue.title || clientPayload.orchestrator_issue_title || '');
+              core.setOutput('body', clientIssue.body || clientPayload.orchestrator_issue_body || '');
+              core.setOutput('url', clientIssue.url || clientPayload.orchestrator_issue_url || '');
+              core.setOutput('author', clientIssue.author || clientIssue.user?.login || clientPayload.orchestrator_issue_author || 'unknown');
+              core.setOutput('repository', issueRepository);
+              core.setOutput('target_role', clientPayload.target_role || 'parser-or-api-service');
+              core.setOutput('is_local_issue', String(issueRepository === `${context.repo.owner}/${context.repo.repo}`));
+              return;
+            }
+
+            const issueRepository =
+              clientPayload.issue_repository ||
+              clientPayload.source_repository ||
+              clientPayload.repository ||
+              clientPayload.orchestrator_repo ||
+              `${context.repo.owner}/${context.repo.repo}`;
+            const [issueOwner, issueRepo] = issueRepository.split('/');
+
+            if (!issueOwner || !issueRepo) {
+              core.setFailed(`Invalid issue repository: ${issueRepository}`);
+              return;
+            }
 
             const { data: issue } = await github.rest.issues.get({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
+              owner: issueOwner,
+              repo: issueRepo,
               issue_number: issueNumber,
             });
 
@@ -47,16 +108,23 @@ jobs:
             core.setOutput('body', issue.body || '');
             core.setOutput('url', issue.html_url);
             core.setOutput('author', issue.user?.login || 'unknown');
+            core.setOutput('repository', `${issueOwner}/${issueRepo}`);
+            core.setOutput('target_role', clientPayload.target_role || 'local');
+            core.setOutput('is_local_issue', String(`${issueOwner}/${issueRepo}` === `${context.repo.owner}/${context.repo.repo}`));
 
       - name: Generate Codex prompt
         uses: actions/github-script@v7
         env:
           ISSUE_NUMBER: ${{ steps.issue.outputs.number }}
+          ISSUE_REPOSITORY: ${{ steps.issue.outputs.repository }}
           ISSUE_TITLE: ${{ steps.issue.outputs.title }}
           ISSUE_AUTHOR: ${{ steps.issue.outputs.author }}
           ISSUE_URL: ${{ steps.issue.outputs.url }}
           ISSUE_BODY: ${{ steps.issue.outputs.body }}
+          ISSUE_TARGET_ROLE: ${{ steps.issue.outputs.target_role }}
+          ISSUE_IS_LOCAL: ${{ steps.issue.outputs.is_local_issue }}
         with:
+          github-token: ${{ github.token }}
           script: |
             const fs = require('node:fs');
             const path = require('node:path');
@@ -78,10 +146,16 @@ jobs:
             8. Leave a concise final summary with verification results.
 
             GitHub issue:
+            Repository: ${process.env.ISSUE_REPOSITORY}
             Issue: #${process.env.ISSUE_NUMBER}
             Title: ${process.env.ISSUE_TITLE}
             Author: @${process.env.ISSUE_AUTHOR}
             URL: ${process.env.ISSUE_URL}
+            Target role: ${process.env.ISSUE_TARGET_ROLE}
+            Issue is local to this repo: ${process.env.ISSUE_IS_LOCAL}
+
+            If this issue was dispatched from an orchestrator repo and this repository does not need changes,
+            make no file edits and explain why in the final message.
 
             Body:
             ${process.env.ISSUE_BODY || '(No issue body provided.)'}
@@ -149,9 +223,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           ISSUE_NUMBER: ${{ steps.issue.outputs.number }}
+          ISSUE_REPOSITORY: ${{ steps.issue.outputs.repository }}
           ISSUE_TITLE: ${{ steps.issue.outputs.title }}
           CODEX_FINAL_MESSAGE: ${{ steps.run_codex.outputs.final-message }}
           CODEX_OUTCOME: ${{ steps.run_codex.outcome }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          ISSUE_URL: ${{ steps.issue.outputs.url }}
+          ISSUE_IS_LOCAL: ${{ steps.issue.outputs.is_local_issue }}
         run: |
           set -euo pipefail
 
@@ -166,7 +244,11 @@ jobs:
 
           pr_body="$(mktemp)"
           {
-            echo "Closes #${ISSUE_NUMBER}"
+            if [ "${ISSUE_IS_LOCAL}" = "true" ]; then
+              echo "Closes #${ISSUE_NUMBER}"
+            else
+              echo "Part of orchestrator issue: ${ISSUE_URL}"
+            fi
             echo
             echo "Codex step outcome: ${CODEX_OUTCOME}"
             echo
@@ -182,11 +264,11 @@ jobs:
           if gh pr create \
             --title "Implement issue #${ISSUE_NUMBER}: ${ISSUE_TITLE}" \
             --body-file "$pr_body" \
-            --base main \
+            --base "$DEFAULT_BRANCH" \
             --head "${{ github.repository_owner }}:$branch"; then
             echo "Pull request created."
           else
-            compare_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/main...${branch}"
+            compare_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/${DEFAULT_BRANCH}...${branch}"
             {
               echo "Codex pushed an implementation branch, but GitHub Actions is not permitted to create pull requests in this repository."
               echo
@@ -197,14 +279,19 @@ jobs:
               echo "Settings -> Actions -> General -> Workflow permissions -> Allow GitHub Actions to create and approve pull requests."
             } > "$pr_body"
 
-            gh issue comment "${ISSUE_NUMBER}" --body-file "$pr_body"
+            if [ "${ISSUE_REPOSITORY}" = "${GITHUB_REPOSITORY}" ]; then
+              gh issue comment "${ISSUE_NUMBER}" --repo "${ISSUE_REPOSITORY}" --body-file "$pr_body"
+            else
+              cat "$pr_body"
+            fi
           fi
 
       - name: Comment when no changes were made
-        if: steps.changes.outputs.has_changes == 'false'
+        if: steps.changes.outputs.has_changes == 'false' && steps.issue.outputs.is_local_issue == 'true'
         uses: actions/github-script@v7
         env:
           ISSUE_NUMBER: ${{ steps.issue.outputs.number }}
+          ISSUE_REPOSITORY: ${{ steps.issue.outputs.repository }}
           CODEX_FINAL_MESSAGE: ${{ steps.run_codex.outputs.final-message }}
           CODEX_OUTCOME: ${{ steps.run_codex.outcome }}
         with:
@@ -218,18 +305,21 @@ jobs:
               process.env.CODEX_FINAL_MESSAGE || 'No final Codex message was returned.',
             ].join('\n');
 
+            const [owner, repo] = process.env.ISSUE_REPOSITORY.split('/');
+
             await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
+              owner,
+              repo,
               issue_number: Number(process.env.ISSUE_NUMBER),
               body,
             });
 
       - name: Comment when workflow failed
-        if: failure()
+        if: failure() && steps.issue.outputs.is_local_issue == 'true'
         uses: actions/github-script@v7
         env:
           ISSUE_NUMBER: ${{ steps.issue.outputs.number }}
+          ISSUE_REPOSITORY: ${{ steps.issue.outputs.repository }}
         with:
           github-token: ${{ github.token }}
           script: |
@@ -239,10 +329,12 @@ jobs:
               return;
             }
 
+            const issueRepository = process.env.ISSUE_REPOSITORY || `${context.repo.owner}/${context.repo.repo}`;
+            const [owner, repo] = issueRepository.split('/');
             const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
             await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
+              owner,
+              repo,
               issue_number: issueNumber,
               body: `Codex issue-to-PR workflow failed before it could create a pull request.\n\nRun logs: ${runUrl}`,
             });
