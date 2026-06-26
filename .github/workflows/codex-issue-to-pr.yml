@@ -3,8 +3,6 @@ name: OpenAI issue to PR
 on:
   repository_dispatch:
     types: [orchestrator_issue]
-  issues:
-    types: [opened, edited, reopened]
   workflow_dispatch:
     inputs:
       issue_number:
