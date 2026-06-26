@@ -13,12 +13,22 @@ Your resume parser API now has **automatic OCR fallback support** for scanned/im
 
 2. **Environment variables are ready** in `.env`:
    ```env
+   LLM_PROVIDER=openai
+   OPENAI_API_KEY=sk-...
    OCR_FALLBACK_ENABLED=true
    OCR_MIN_TEXT_LENGTH=300
    OCR_MODEL=gpt-4.1-mini
    OCR_MAX_PAGES=5
    OCR_DPI=200
    ```
+
+   To parse resumes with Gemini instead of OpenAI, set:
+   ```env
+   LLM_PROVIDER=gemini
+   GEMINI_API_KEY=...
+   GEMINI_MODEL=gemini-2.5-flash
+   ```
+   OCR fallback still uses OpenAI vision and requires `OPENAI_API_KEY` when `OCR_FALLBACK_ENABLED=true`.
 
 ## How It Works
 
@@ -34,7 +44,7 @@ Is text >= 300 characters?
            → Extract and merge text from all pages
            → Use OCR text
     ↓
-Parse with OpenAI API
+Parse with configured LLM provider
     ↓
 Return response with extraction_method: "normal" or "ocr"
 ```

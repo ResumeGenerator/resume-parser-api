@@ -10,7 +10,7 @@ FastAPI service for extracting structured resume data from uploaded PDF, DOCX, o
 - Text extraction with PyMuPDF and python-docx
 - Clean whitespace and bullet normalization without stripping skill symbols like `C++`, `C#`, `.NET`, `Node.js`, or `CI/CD`
 - Rejects uploaded documents that do not appear to be resumes
-- LLM integration through OpenAI
+- LLM integration through OpenAI or Gemini
 - Pydantic validation for the parsed resume profile
 - Stores parsed resume documents in MongoDB
 - Stores rendered/template resume payloads in MongoDB
@@ -75,9 +75,11 @@ docker run --env-file .env -p 8000:8000 resume-parser-service
 | `APP_NAME` | FastAPI app name |
 | `MAX_FILE_SIZE_MB` | Maximum upload size in MB |
 | `CORS_ORIGINS` | Comma-separated allowed frontend origins |
-| `LLM_PROVIDER` | `openai` |
+| `LLM_PROVIDER` | `openai` or `gemini` |
 | `OPENAI_API_KEY` | OpenAI API key |
 | `OPENAI_MODEL` | OpenAI chat model |
+| `GEMINI_API_KEY` | Gemini API key; `GOOGLE_API_KEY` and `GOOGLE_GENERATIVE_AI_API_KEY` are also accepted |
+| `GEMINI_MODEL` | Gemini model, defaults to `gemini-2.5-flash` |
 | `MONGO_URI` | MongoDB connection URI; `MONGODB_URI` and `MONGO_URL` are also accepted |
 | `MONGO_DATABASE` | MongoDB database name; `MONGO_DB` and `MONGODB_DATABASE` are also accepted |
 | `MONGO_COLLECTION` | Collection for parsed and edited resume versions; `MONGODB_RESUME_COLLECTION` is also accepted |
@@ -89,10 +91,19 @@ Set these variables in Railway:
 
 ```text
 OPENAI_API_KEY=...
+LLM_PROVIDER=openai
 MONGO_URI=...
 MONGO_DATABASE=resume_parser
 MONGO_COLLECTION=parsed_resumes
 MONGO_TEMPLATE_COLLECTION=template_resumes
+```
+
+To use Gemini instead, set:
+
+```text
+LLM_PROVIDER=gemini
+GEMINI_API_KEY=...
+GEMINI_MODEL=gemini-2.5-flash
 ```
 
 The Dockerfile uses Railway's `PORT` environment variable automatically:

@@ -82,6 +82,8 @@ services:
       LLM_PROVIDER: openai
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       OPENAI_MODEL: gpt-4.1-mini
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: gemini-2.5-flash
       
       # MongoDB Configuration
       MONGO_URI: mongodb://mongo:27017
@@ -129,6 +131,9 @@ volumes:
 ```bash
 # Set required environment variables
 export OPENAI_API_KEY="sk-..."
+# To use Gemini for resume parsing:
+# export LLM_PROVIDER="gemini"
+# export GEMINI_API_KEY="..."
 
 # Start services
 docker-compose up -d
@@ -148,7 +153,9 @@ docker-compose down -v
 1. **Use .env file (local development)**:
    ```bash
    # Create .env.docker
+   LLM_PROVIDER=openai
    OPENAI_API_KEY=sk-...
+   GEMINI_API_KEY=
    MONGO_URI=mongodb://mongo:27017
    OCR_FALLBACK_ENABLED=true
    

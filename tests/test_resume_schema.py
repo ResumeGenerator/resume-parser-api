@@ -1,9 +1,12 @@
 import unittest
 from datetime import UTC, datetime
+from unittest.mock import AsyncMock, patch
 
 from bson import ObjectId
 from pydantic import ValidationError
 
+from app.core.config import Settings
+from app.core.llm_client import GeminiClient, OpenAIClient, get_llm_client
 from app.models.resume_schema import ResumeProfile, ResumeTemplateSaveRequest
 from app.services.resume_parser import normalize_resume_profile_payload
 from app.services.resume_preview import build_resume_preview_html
@@ -167,6 +170,57 @@ class ResumeSchemaTests(unittest.TestCase):
         self.assertEqual(serialized_document["version"], 2)
         self.assertEqual(list_item["id"], resume_id)
         self.assertEqual(list_item["candidateName"], "Alex")
+
+
+class LLMClientTests(unittest.IsolatedAsyncioTestCase):
+    def test_get_llm_client_supports_configured_gemini_provider(self) -> None:
+        settings = Settings(LLM_PROVIDER="gemini", GEMINI_API_KEY="gemini-key")
+
+        client = get_llm_client(settings)
+
+        self.assertIsInstance(client, GeminiClient)
+
+    def test_get_llm_client_keeps_openai_provider_default(self) -> None:
+        settings = Settings(LLM_PROVIDER="openai", OPENAI_API_KEY="openai-key")
+
+        client = get_llm_client(settings)
+
+        self.assertIsInstance(client, OpenAIClient)
+
+    async def test_gemini_client_extracts_json_from_generate_content_response(self) -> None:
+        settings = Settings(LLM_PROVIDER="gemini", GEMINI_API_KEY="gemini-key", GEMINI_MODEL="gemini-test")
+        response_payload = {
+            "candidates": [
+                {
+                    "content": {
+                        "parts": [
+                            {
+                                "text": '{"profile":{"template":"strassburg","format":"html","data":{"name":"Alex","sections":[]}}}'
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+
+        fake_response = unittest.mock.Mock()
+        fake_response.status_code = 200
+        fake_response.json.return_value = response_payload
+        fake_response.text = "ok"
+
+        fake_http_client = unittest.mock.Mock()
+        fake_http_client.__aenter__ = AsyncMock(return_value=fake_http_client)
+        fake_http_client.__aexit__ = AsyncMock(return_value=None)
+        fake_http_client.post = AsyncMock(return_value=fake_response)
+
+        with patch("app.core.llm_client.httpx.AsyncClient", return_value=fake_http_client):
+            profile = await GeminiClient(settings).extract_resume_profile("Resume text", None)
+
+        self.assertEqual(profile["profile"]["data"]["name"], "Alex")
+        fake_http_client.post.assert_awaited_once()
+        _, kwargs = fake_http_client.post.await_args
+        self.assertEqual(kwargs["params"], {"key": "gemini-key"})
+        self.assertEqual(kwargs["json"]["generationConfig"]["responseMimeType"], "application/json")
 
 
 if __name__ == "__main__":

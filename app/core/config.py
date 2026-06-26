@@ -17,6 +17,11 @@ class Settings(BaseSettings):
 
     openai_api_key: str | None = Field(default=None, validation_alias=AliasChoices("OPENAI_API_KEY", "OPENAI_KEY"))
     openai_model: str = Field(default="gpt-4.1-mini", alias="OPENAI_MODEL")
+    gemini_api_key: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY"),
+    )
+    gemini_model: str = Field(default="gemini-2.5-flash", alias="GEMINI_MODEL")
 
     ocr_fallback_enabled: bool = Field(default=True, alias="OCR_FALLBACK_ENABLED")
     ocr_min_text_length: int = Field(default=300, alias="OCR_MIN_TEXT_LENGTH")

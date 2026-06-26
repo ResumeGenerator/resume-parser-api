@@ -71,11 +71,68 @@ class OpenAIClient(BaseLLMClient):
         return parse_json_response(content)
 
 
+class GeminiClient(BaseLLMClient):
+    def __init__(self, settings: Settings):
+        if not settings.gemini_api_key:
+            raise RuntimeError("GEMINI_API_KEY is required when LLM_PROVIDER=gemini.")
+        self.api_key = settings.gemini_api_key
+        self.model = settings.gemini_model
+
+    async def extract_resume_profile(self, resume_text: str, job_description: str | None) -> dict[str, Any]:
+        payload = {
+            "systemInstruction": {
+                "parts": [{"text": SYSTEM_PROMPT}],
+            },
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [{"text": build_user_prompt(resume_text, job_description)}],
+                }
+            ],
+            "generationConfig": {
+                "responseMimeType": "application/json",
+                "temperature": 0.1,
+            },
+        }
+        headers = {"Content-Type": "application/json"}
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"
+
+        async with httpx.AsyncClient(timeout=90) as client:
+            response = await client.post(url, json=payload, headers=headers, params={"key": self.api_key})
+
+        if response.status_code >= 400:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Gemini request failed: {response.text}")
+
+        content = self._extract_text(response.json())
+        return parse_json_response(content)
+
+    @staticmethod
+    def _extract_text(response_payload: dict[str, Any]) -> str:
+        try:
+            parts = response_payload["candidates"][0]["content"]["parts"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Gemini returned an unexpected response shape.",
+            ) from exc
+
+        text_parts = [part.get("text", "") for part in parts if isinstance(part, dict)]
+        content = "".join(text_parts).strip()
+        if not content:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Gemini returned an empty response.",
+            )
+        return content
+
+
 def get_llm_client(settings: Settings | None = None) -> BaseLLMClient:
     settings = settings or get_settings()
     provider = settings.llm_provider.lower().strip()
 
     if provider == "openai":
         return OpenAIClient(settings)
+    if provider == "gemini":
+        return GeminiClient(settings)
 
     raise RuntimeError(f"Unsupported LLM_PROVIDER '{settings.llm_provider}'.")
