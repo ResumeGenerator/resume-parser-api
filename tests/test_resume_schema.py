@@ -7,10 +7,16 @@ from pydantic import ValidationError
 
 from app.core.config import Settings
 from app.core.llm_client import GeminiClient, OpenAIClient, get_llm_client
-from app.models.resume_schema import ResumeProfile, ResumeTemplateSaveRequest
+from app.models.resume_schema import ResumeProfile, ResumeTemplateDocumentResponse, ResumeTemplateSaveRequest
 from app.services.resume_parser import normalize_resume_profile_payload
 from app.services.resume_preview import build_resume_preview_html
-from app.services.resume_repository import serialize_resume_document, serialize_resume_list_item
+from app.services.resume_repository import (
+    MongoResumeRepository,
+    serialize_resume_document,
+    serialize_resume_list_item,
+    serialize_template_resume_document,
+    serialize_template_resume_fallback,
+)
 
 
 class ResumeSchemaTests(unittest.TestCase):
@@ -170,6 +176,72 @@ class ResumeSchemaTests(unittest.TestCase):
         self.assertEqual(serialized_document["version"], 2)
         self.assertEqual(list_item["id"], resume_id)
         self.assertEqual(list_item["candidateName"], "Alex")
+
+    def test_template_resume_serialization_matches_response_contract(self) -> None:
+        document = {
+            "_id": ObjectId(),
+            "originalResumeId": str(ObjectId()),
+            "templateResume": {"data": {"name": "Alex", "sections": []}},
+            "metadata": {"template": "strassburg"},
+            "source": {},
+            "createdAt": datetime(2026, 1, 1, tzinfo=UTC),
+            "updatedAt": datetime(2026, 1, 2, tzinfo=UTC),
+        }
+
+        serialized_document = serialize_template_resume_document(document)
+        response = ResumeTemplateDocumentResponse.model_validate(serialized_document)
+
+        self.assertEqual(response.id, str(document["_id"]))
+        self.assertEqual(response.originalResumeId, document["originalResumeId"])
+        self.assertEqual(response.templateResume.data.name, "Alex")
+
+    def test_template_resume_fallback_uses_parsed_resume_profile(self) -> None:
+        resume_id = str(ObjectId())
+        document = {
+            "_id": ObjectId(resume_id),
+            "resumeId": resume_id,
+            "profile": {"data": {"name": "Alex", "sections": []}},
+            "metadata": {"filename": "alex.pdf"},
+            "source": {"createdFrom": "parse"},
+            "createdAt": datetime(2026, 1, 1, tzinfo=UTC),
+            "updatedAt": datetime(2026, 1, 2, tzinfo=UTC),
+        }
+
+        serialized_document = serialize_template_resume_fallback(document, resume_id)
+        response = ResumeTemplateDocumentResponse.model_validate(serialized_document)
+
+        self.assertEqual(response.id, resume_id)
+        self.assertEqual(response.originalResumeId, resume_id)
+        self.assertEqual(response.templateResume.data.name, "Alex")
+        self.assertIsNotNone(response.previewHtml)
+
+
+class MongoResumeRepositoryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_get_latest_template_resume_falls_back_to_parsed_resume(self) -> None:
+        resume_id = str(ObjectId())
+        repository = MongoResumeRepository.__new__(MongoResumeRepository)
+        repository.template_collection = unittest.mock.Mock()
+        repository.template_collection.find_one = AsyncMock(return_value=None)
+        repository.collection = unittest.mock.Mock()
+        repository.collection.find_one = AsyncMock(
+            return_value={
+                "_id": ObjectId(resume_id),
+                "resumeId": resume_id,
+                "profile": {"data": {"name": "Alex", "sections": []}},
+                "metadata": {},
+                "source": {},
+                "createdAt": datetime(2026, 1, 1, tzinfo=UTC),
+                "updatedAt": datetime(2026, 1, 2, tzinfo=UTC),
+            }
+        )
+
+        document = await repository.get_latest_template_resume(resume_id)
+
+        self.assertIsNotNone(document)
+        assert document is not None
+        self.assertEqual(document["id"], resume_id)
+        self.assertEqual(document["originalResumeId"], resume_id)
+        self.assertEqual(document["templateResume"]["data"]["name"], "Alex")
 
 
 class LLMClientTests(unittest.IsolatedAsyncioTestCase):
