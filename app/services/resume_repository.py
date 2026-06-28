@@ -183,13 +183,7 @@ class MongoResumeRepository:
             )
             return serialized_document
 
-        latest_resume = await self.get_latest_version(original_resume_id)
-        if latest_resume is None:
-            latest_resume = await self.collection.find_one({"_id": ObjectId(original_resume_id)})
-        if latest_resume is None:
-            return None
-
-        return serialize_template_resume_fallback(latest_resume, original_resume_id)
+        return None
 
     async def list_saved(self, limit: int = 100, skip: int = 0) -> list[dict[str, Any]]:
         projection = {
@@ -256,31 +250,6 @@ def serialize_template_resume_document(document: dict[str, Any]) -> dict[str, An
         serialized[key] = serialize_datetime(serialized.get(key))
 
     return serialized
-
-
-def serialize_template_resume_fallback(document: dict[str, Any], original_resume_id: str) -> dict[str, Any]:
-    profile = ResumeTemplateSaveRequest.model_validate(document.get("profile", {}))
-    created_at = serialize_datetime(document.get("createdAt"))
-    updated_at = serialize_datetime(document.get("updatedAt"))
-
-    return {
-        "id": original_resume_id,
-        "originalResumeId": original_resume_id,
-        "templateResume": profile.model_dump(mode="json"),
-        "metadata": {
-            **document.get("metadata", {}),
-            "originalResumeId": original_resume_id,
-            "createdFrom": "parsed-resume-fallback",
-        },
-        "source": {
-            **document.get("source", {}),
-            "originalResumeId": original_resume_id,
-            "createdFrom": "parsed-resume-fallback",
-        },
-        "createdAt": created_at,
-        "updatedAt": updated_at,
-        "previewHtml": build_resume_preview_html(profile),
-    }
 
 
 def serialize_resume_list_item(document: dict[str, Any], stable_id: str | None = None) -> dict[str, Any]:
