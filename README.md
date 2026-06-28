@@ -13,8 +13,6 @@ FastAPI service for extracting structured resume data from uploaded PDF, DOCX, o
 - LLM integration through OpenAI or Gemini
 - Pydantic validation for the parsed resume profile
 - Stores parsed resume documents in MongoDB
-- Stores rendered/template resume payloads in MongoDB
-- Lists saved resume summaries for UI binding
 
 ## Project Structure
 
@@ -82,8 +80,7 @@ docker run --env-file .env -p 8000:8000 resume-parser-service
 | `GEMINI_MODEL` | Gemini model, defaults to `gemini-2.5-flash` |
 | `MONGO_URI` | MongoDB connection URI; `MONGODB_URI` and `MONGO_URL` are also accepted |
 | `MONGO_DATABASE` | MongoDB database name; `MONGO_DB` and `MONGODB_DATABASE` are also accepted |
-| `MONGO_COLLECTION` | Collection for parsed and edited resume versions; `MONGODB_RESUME_COLLECTION` is also accepted |
-| `MONGO_TEMPLATE_COLLECTION` | Collection for rendered/template resume payloads; `MONGODB_TEMPLATE_RESUME_COLLECTION` is also accepted |
+| `MONGO_COLLECTION` | Collection for parsed resume documents; `MONGODB_RESUME_COLLECTION` is also accepted |
 
 ## Railway Deployment
 
@@ -95,7 +92,6 @@ LLM_PROVIDER=openai
 MONGO_URI=...
 MONGO_DATABASE=resume_parser
 MONGO_COLLECTION=parsed_resumes
-MONGO_TEMPLATE_COLLECTION=template_resumes
 ```
 
 To use Gemini instead, set:
@@ -197,53 +193,9 @@ curl -X POST "http://localhost:8000/api/resumes/parse" \
 }
 ```
 
-## Fetch Stored Resume
+## Mongo Storage
 
-List saved resume summaries:
-
-```bash
-curl "http://localhost:8000/api/resumes"
-```
-
-Fetch a full saved resume by ID:
-
-```bash
-curl "http://localhost:8000/api/resumes/675f3b5e9c8a6a1d2f3a4b5c"
-```
-
-Save a rendered/template resume payload for a parsed resume:
-
-```bash
-curl -X POST "http://localhost:8000/api/resumes/675f3b5e9c8a6a1d2f3a4b5c/templates" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "template": "sydney",
-    "format": "html",
-    "data": {
-      "name": "Biju Manayagaths",
-      "title": "Solution Architect",
-      "location": "Doha, Qatar",
-      "phone": "+97474452435",
-      "email": "bijum777@gmail.com",
-      "summary": "Senior Engineer with expertise in designing scalable system architectures.",
-      "sections": []
-    },
-    "font": "Arial",
-    "color": "#000000",
-    "withPhoto": true,
-    "avatar": "https://example.com/avatar.png",
-    "contactsTitle": "Contacts",
-    "detailsTitle": "Details"
-  }'
-```
-
-The `POST /api/resumes/{resume_id}/templates` and `POST /api/resumes/{resume_id}/edits` responses include `previewHtml` so the UI can immediately render the saved or edited resume preview.
-
-Fetch the latest rendered/template resume payload:
-
-```bash
-curl "http://localhost:8000/api/resumes/675f3b5e9c8a6a1d2f3a4b5c/templates/latest"
-```
+The parse endpoint persists the validated resume profile before returning it.
 
 Stored MongoDB documents use this shape:
 
@@ -258,20 +210,6 @@ Stored MongoDB documents use this shape:
   "source": {
     "jobDescription": "optional submitted job description"
   },
-  "createdAt": "datetime",
-  "updatedAt": "datetime"
-}
-```
-
-Template resume MongoDB documents use this shape:
-
-```json
-{
-  "_id": "ObjectId",
-  "originalResumeId": "675f3b5e9c8a6a1d2f3a4b5c",
-  "templateResume": {},
-  "metadata": {},
-  "source": {},
   "createdAt": "datetime",
   "updatedAt": "datetime"
 }

@@ -1,5 +1,4 @@
 import unittest
-from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
 
 from bson import ObjectId
@@ -7,15 +6,9 @@ from pydantic import ValidationError
 
 from app.core.config import Settings
 from app.core.llm_client import GeminiClient, OpenAIClient, get_llm_client
-from app.models.resume_schema import ResumeProfile, ResumeTemplateDocumentResponse, ResumeTemplateSaveRequest
+from app.models.resume_schema import ResumeProfile
 from app.services.resume_parser import normalize_resume_profile_payload
-from app.services.resume_preview import build_resume_preview_html
-from app.services.resume_repository import (
-    MongoResumeRepository,
-    serialize_resume_document,
-    serialize_resume_list_item,
-    serialize_template_resume_document,
-)
+from app.services.resume_repository import MongoResumeRepository
 
 
 class ResumeSchemaTests(unittest.TestCase):
@@ -99,22 +92,7 @@ class ResumeSchemaTests(unittest.TestCase):
         self.assertEqual(profile.data.sections[0].items, payload["data"]["sections"][0]["items"])
         self.assertEqual(profile.data.sections[1].items[0].company, "Lexis Nexis")
 
-    def test_template_resume_payload_accepts_renderer_shape_with_metadata(self) -> None:
-        payload = {
-            "template": "sydney",
-            "format": "html",
-            "data": {"name": "Biju Manayagaths", "sections": []},
-            "metadata": {"source": "ui"},
-            "source": {"editedBy": "user"},
-        }
-
-        request = ResumeTemplateSaveRequest.model_validate(payload)
-
-        self.assertEqual(request.template, "sydney")
-        self.assertEqual(request.data.name, "Biju Manayagaths")
-        self.assertEqual(request.metadata["source"], "ui")
-
-    def test_template_resume_payload_forbids_unexpected_top_level_fields(self) -> None:
+    def test_resume_profile_forbids_unexpected_top_level_fields(self) -> None:
         payload = {
             "template": "sydney",
             "format": "html",
@@ -123,88 +101,46 @@ class ResumeSchemaTests(unittest.TestCase):
         }
 
         with self.assertRaises(ValidationError):
-            ResumeTemplateSaveRequest.model_validate(payload)
-
-    def test_preview_html_escapes_resume_content(self) -> None:
-        profile = ResumeProfile.model_validate(
-            {
-                "data": {
-                    "name": "<Alex>",
-                    "title": "Engineer",
-                    "email": "alex@example.com",
-                    "sections": [
-                        {
-                            "title": "Professional summary",
-                            "type": "summary",
-                            "items": "<script>alert(1)</script>",
-                        }
-                    ],
-                },
-                "font": "Arial; color:red",
-                "color": "red;background:url(javascript:alert(1))",
-            }
-        )
-
-        html = build_resume_preview_html(profile)
-
-        self.assertIn("&lt;Alex&gt;", html)
-        self.assertIn("&lt;script&gt;alert(1)&lt;/script&gt;", html)
-        self.assertNotIn("<script>alert(1)</script>", html)
-        self.assertIn("color: #000000;", html)
-
-    def test_versioned_resume_serialization_uses_stable_resume_id(self) -> None:
-        resume_id = str(ObjectId())
-        version_document_id = ObjectId()
-        document = {
-            "_id": version_document_id,
-            "resumeId": resume_id,
-            "version": 2,
-            "status": "edited",
-            "profile": {"data": {"name": "Alex", "email": "alex@example.com", "title": "Engineer"}},
-            "metadata": {"filename": "alex.pdf"},
-            "source": {},
-            "createdAt": datetime(2026, 1, 1, tzinfo=UTC),
-            "updatedAt": datetime(2026, 1, 2, tzinfo=UTC),
-        }
-
-        serialized_document = serialize_resume_document(document)
-        list_item = serialize_resume_list_item(document)
-
-        self.assertEqual(serialized_document["id"], resume_id)
-        self.assertEqual(serialized_document["resumeId"], resume_id)
-        self.assertEqual(serialized_document["version"], 2)
-        self.assertEqual(list_item["id"], resume_id)
-        self.assertEqual(list_item["candidateName"], "Alex")
-
-    def test_template_resume_serialization_matches_response_contract(self) -> None:
-        document = {
-            "_id": ObjectId(),
-            "originalResumeId": str(ObjectId()),
-            "templateResume": {"data": {"name": "Alex", "sections": []}},
-            "metadata": {"template": "strassburg"},
-            "source": {},
-            "createdAt": datetime(2026, 1, 1, tzinfo=UTC),
-            "updatedAt": datetime(2026, 1, 2, tzinfo=UTC),
-        }
-
-        serialized_document = serialize_template_resume_document(document)
-        response = ResumeTemplateDocumentResponse.model_validate(serialized_document)
-
-        self.assertEqual(response.id, str(document["_id"]))
-        self.assertEqual(response.originalResumeId, document["originalResumeId"])
-        self.assertEqual(response.templateResume.data.name, "Alex")
+            ResumeProfile.model_validate(payload)
 
 
 class MongoResumeRepositoryTests(unittest.IsolatedAsyncioTestCase):
-    async def test_get_latest_template_resume_returns_none_when_no_template_is_saved(self) -> None:
-        resume_id = str(ObjectId())
+    async def test_save_stores_parsed_resume_document(self) -> None:
         repository = MongoResumeRepository.__new__(MongoResumeRepository)
-        repository.template_collection = unittest.mock.Mock()
-        repository.template_collection.find_one = AsyncMock(return_value=None)
+        repository.database_name = "resume_parser"
+        repository.collection_name = "parsed_resumes"
+        repository.collection = unittest.mock.Mock()
 
-        document = await repository.get_latest_template_resume(resume_id)
+        async def insert_one(document: dict) -> unittest.mock.Mock:
+            return unittest.mock.Mock(inserted_id=document["_id"])
 
-        self.assertIsNone(document)
+        repository.collection.insert_one = AsyncMock(side_effect=insert_one)
+
+        profile = ResumeProfile.model_validate(
+            {
+                "data": {
+                    "name": "Alex Morgan",
+                    "email": "alex@example.com",
+                    "sections": [],
+                }
+            }
+        )
+
+        resume_id = await repository.save(
+            profile=profile,
+            metadata={"filename": "alex.pdf"},
+            job_description="Python backend engineer",
+        )
+
+        self.assertTrue(ObjectId.is_valid(resume_id))
+        repository.collection.insert_one.assert_awaited_once()
+        saved_document = repository.collection.insert_one.await_args.args[0]
+        self.assertEqual(resume_id, str(saved_document["_id"]))
+        self.assertEqual(saved_document["resumeId"], str(saved_document["_id"]))
+        self.assertEqual(saved_document["version"], 1)
+        self.assertEqual(saved_document["status"], "parsed")
+        self.assertEqual(saved_document["profile"]["data"]["name"], "Alex Morgan")
+        self.assertEqual(saved_document["source"]["createdFrom"], "parse")
 
 
 class LLMClientTests(unittest.IsolatedAsyncioTestCase):

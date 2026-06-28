@@ -26,10 +26,9 @@ async def initialize_database() -> None:
         repository = get_resume_repository(settings)
         await repository.initialize()
         logger.info(
-            "Database initialised successfully: database=%r resume_collection=%r template_collection=%r",
+            "Database initialised successfully: database=%r resume_collection=%r",
             repository.database_name,
             repository.collection_name,
-            repository.template_collection_name,
         )
     except Exception as exc:
         logger.error(

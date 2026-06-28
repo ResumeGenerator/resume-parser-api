@@ -12,7 +12,6 @@ class Settings(BaseSettings):
         default="http://localhost:4200,http://127.0.0.1:4200,https://resume-generator-spa-staging.up.railway.app",
         validation_alias=AliasChoices("CORS_ORIGINS", "ALLOWED_ORIGIN", "ALLOWED_ORIGINS"),
     )
-    print('Parser Allowed Origins',cors_origins)
     llm_provider: str = Field(default="openai", alias="LLM_PROVIDER")
 
     openai_api_key: str | None = Field(default=None, validation_alias=AliasChoices("OPENAI_API_KEY", "OPENAI_KEY"))
@@ -37,10 +36,6 @@ class Settings(BaseSettings):
     mongodb_resume_collection: str = Field(
         default="parsed_resumes",
         validation_alias=AliasChoices("MONGO_COLLECTION", "MONGODB_RESUME_COLLECTION"),
-    )
-    mongodb_template_resume_collection: str = Field(
-        default="template_resumes",
-        validation_alias=AliasChoices("MONGODB_TEMPLATE_RESUME_COLLECTION", "MONGO_TEMPLATE_COLLECTION"),
     )
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
