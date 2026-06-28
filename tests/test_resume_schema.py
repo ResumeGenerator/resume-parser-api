@@ -15,8 +15,6 @@ class ResumeSchemaTests(unittest.TestCase):
     def test_service_payload_normalizer_unwraps_profile_payload(self) -> None:
         payload = {
             "profile": {
-                "template": "strassburg",
-                "format": "html",
                 "data": {"name": "Biju Manayagaths", "sections": []},
             }
         }
@@ -25,10 +23,14 @@ class ResumeSchemaTests(unittest.TestCase):
 
         self.assertEqual(normalized["data"]["name"], "Biju Manayagaths")
 
-    def test_resume_profile_accepts_renderer_shape(self) -> None:
+    def test_resume_profile_defaults_to_resume_data_only(self) -> None:
+        profile = ResumeProfile.model_validate({"data": {"sections": []}})
+
+        self.assertEqual(set(profile.model_dump(mode="json")), {"data"})
+        self.assertFalse(hasattr(profile, "template"))
+
+    def test_resume_profile_accepts_parser_data_shape(self) -> None:
         payload = {
-            "template": "sydney",
-            "format": "html",
             "data": {
                 "name": "Biju Manayagaths",
                 "title": "Solution Architect s",
@@ -77,27 +79,25 @@ class ResumeSchemaTests(unittest.TestCase):
                     },
                 ],
             },
-            "font": "Arial",
-            "color": "#000000",
-            "withPhoto": True,
-            "avatar": "https://example.com/avatar.png?v=1782462038256",
-            "contactsTitle": "Contacts",
-            "detailsTitle": "Details",
         }
 
         profile = ResumeProfile.model_validate(payload)
 
-        self.assertEqual(profile.template, "sydney")
         self.assertEqual(profile.data.email, "bijum777@gmail.com")
         self.assertEqual(profile.data.sections[0].items, payload["data"]["sections"][0]["items"])
         self.assertEqual(profile.data.sections[1].items[0].company, "Lexis Nexis")
 
-    def test_resume_profile_forbids_unexpected_top_level_fields(self) -> None:
+    def test_resume_profile_forbids_template_presentation_fields(self) -> None:
         payload = {
-            "template": "sydney",
-            "format": "html",
             "data": {"sections": []},
-            "unexpected": True,
+            "template": "professional-dark-blue",
+            "format": "html",
+            "font": "Arial",
+            "color": "#000000",
+            "withPhoto": True,
+            "avatar": "https://example.com/avatar.png",
+            "contactsTitle": "Contacts",
+            "detailsTitle": "Details",
         }
 
         with self.assertRaises(ValidationError):
@@ -166,7 +166,7 @@ class LLMClientTests(unittest.IsolatedAsyncioTestCase):
                     "content": {
                         "parts": [
                             {
-                                "text": '{"profile":{"template":"strassburg","format":"html","data":{"name":"Alex","sections":[]}}}'
+                                "text": '{"profile":{"data":{"name":"Alex","sections":[]}}}'
                             }
                         ]
                     }

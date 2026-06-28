@@ -129,7 +129,7 @@ SectionItem = (
 )
 
 
-class TemplateResumeSection(StrictBaseModel):
+class ResumeSection(StrictBaseModel):
     title: str = ""
     type: str = ""
     items: str | list[SectionItem] = Field(default_factory=list)
@@ -140,7 +140,7 @@ class TemplateResumeSection(StrictBaseModel):
         return normalize_optional_string(value)
 
 
-class TemplateResumeData(StrictBaseModel):
+class ResumeData(StrictBaseModel):
     name: str = ""
     title: str = ""
     location: str = ""
@@ -154,7 +154,7 @@ class TemplateResumeData(StrictBaseModel):
     address: str = ""
     postalCode: str = ""
     secondaryAddress: str | None = None
-    sections: list[TemplateResumeSection] = Field(default_factory=list)
+    sections: list[ResumeSection] = Field(default_factory=list)
 
     @field_validator(
         "name",
@@ -177,20 +177,7 @@ class TemplateResumeData(StrictBaseModel):
 
 
 class ResumeProfile(StrictBaseModel):
-    template: str = "strassburg"
-    format: str = "html"
-    data: TemplateResumeData = Field(default_factory=TemplateResumeData)
-    font: str = "Times New Roman"
-    color: str = "#000000"
-    withPhoto: bool = False
-    avatar: str | None = None
-    contactsTitle: str = "Contacts"
-    detailsTitle: str = "Details"
-
-    @field_validator("template", "format", "font", "color", "contactsTitle", "detailsTitle", mode="before")
-    @classmethod
-    def normalize_strings(cls, value: Any) -> str:
-        return normalize_optional_string(value)
+    data: ResumeData = Field(default_factory=ResumeData)
 
 
 class ResumeParseResponse(StrictBaseModel):

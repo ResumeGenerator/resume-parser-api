@@ -127,8 +127,6 @@ curl -X POST "http://localhost:8000/api/resumes/parse" \
   "version": 1,
   "status": "parsed",
   "profile": {
-    "template": "strassburg",
-    "format": "html",
     "data": {
       "name": "Alex Morgan",
       "title": "Python Backend Engineer",
@@ -175,13 +173,7 @@ curl -X POST "http://localhost:8000/api/resumes/parse" \
           ]
         }
       ]
-    },
-    "font": "Times New Roman",
-    "color": "#000000",
-    "withPhoto": false,
-    "avatar": null,
-    "contactsTitle": "Contacts",
-    "detailsTitle": "Details"
+    }
   },
   "metadata": {
     "filename": "resume.pdf",
@@ -217,9 +209,8 @@ Stored MongoDB documents use this shape:
 
 ## Future Resume Generation Usage
 
-The returned JSON is intentionally shaped for a downstream resume generation service:
+The returned JSON is intentionally shaped as parsed resume content for a downstream resume generation service:
 
-- Root fields such as `template`, `format`, `font`, `color`, `withPhoto`, `contactsTitle`, and `detailsTitle` can be passed directly to the renderer.
 - `data.name`, `data.title`, `data.location`, `data.phone`, `data.email`, and `data.summary` populate the resume header and summary.
-- `data.sections` contains renderer-ready sections for summary, experience, education, skills, courses, languages, references, links, internships, and hobbies.
-- Section `items` are shaped for the renderer and remain strict at the top-level API boundary.
+- `data.sections` contains structured sections for summary, experience, education, skills, courses, languages, references, links, internships, and hobbies.
+- Template, style, photo, and renderer settings should be selected outside the parser response.
