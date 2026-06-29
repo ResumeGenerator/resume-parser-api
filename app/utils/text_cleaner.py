@@ -10,6 +10,9 @@ _BULLET_CHARS = {
     "\u2219": "-",
     "\uf0b7": "-",
     "\u00b7": "-",
+    "\u25c6": "-",
+    "\u25c7": "-",
+    "\u2756": "-",
 }
 
 
@@ -26,4 +29,3 @@ def clean_resume_text(text: str) -> str:
     text = re.sub(r" *\n *", "\n", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
-

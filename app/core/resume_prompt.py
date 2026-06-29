@@ -28,8 +28,10 @@ CRITICAL RULES
 SECTION MAPPING
 
 Professional summary:
-* Put the best concise summary in data.summary.
-* Also include a summary section with type "summary" and items as the same string when summary text exists.
+* Put the best concise summary in data.summary as a single string.
+* Also include a summary section with type "summary" when summary text exists.
+* In the summary section, set items to an array of strings when the source summary is separated by bullets, numbered items, or other visible delimiters. Remove only the delimiter markers.
+* If the source summary is one paragraph with no visible delimiters, items may be that same single string.
 
 Work experience:
 * items must be an array of objects with position, company, location, jobType, reasonForLeaving, start, end, achievements.
@@ -92,7 +94,7 @@ OUTPUT JSON
       {
         "title": "Professional summary",
         "type": "summary",
-        "items": ""
+        "items": []
       },
       {
         "title": "Work experience",

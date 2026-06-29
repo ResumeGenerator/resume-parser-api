@@ -7,8 +7,9 @@ from pydantic import ValidationError
 from app.core.config import Settings
 from app.core.llm_client import GeminiClient, OpenAIClient, get_llm_client
 from app.models.resume_schema import ResumeProfile
-from app.services.resume_parser import normalize_resume_profile_payload
+from app.services.resume_parser import normalize_resume_profile_payload, split_summary_items
 from app.services.resume_repository import MongoResumeRepository
+from app.utils.text_cleaner import clean_resume_text
 
 
 class ResumeSchemaTests(unittest.TestCase):
@@ -22,6 +23,54 @@ class ResumeSchemaTests(unittest.TestCase):
         normalized = normalize_resume_profile_payload(payload)
 
         self.assertEqual(normalized["data"]["name"], "Biju Manayagaths")
+
+    def test_service_payload_normalizer_splits_summary_section_items(self) -> None:
+        payload = {
+            "data": {
+                "sections": [
+                    {
+                        "title": "Professional summary",
+                        "type": "summary",
+                        "items": (
+                            "- Strategic and results-driven Senior Software Engineer.\n"
+                            "- Proven expertise in end-to-end solution architecture.\n"
+                            "- Strong background in back-end and API-driven architectures."
+                        ),
+                    }
+                ]
+            }
+        }
+
+        normalized = normalize_resume_profile_payload(payload)
+
+        self.assertEqual(
+            normalized["data"]["sections"][0]["items"],
+            [
+                "Strategic and results-driven Senior Software Engineer.",
+                "Proven expertise in end-to-end solution architecture.",
+                "Strong background in back-end and API-driven architectures.",
+            ],
+        )
+
+    def test_split_summary_items_uses_visible_delimiters(self) -> None:
+        items = split_summary_items(
+            "PROFILE SUMMARY\n"
+            "❖ Strategic and results-driven Senior Software Engineer.\n"
+            "❖ Proven expertise in end-to-end solution architecture."
+        )
+
+        self.assertEqual(
+            items,
+            [
+                "Strategic and results-driven Senior Software Engineer.",
+                "Proven expertise in end-to-end solution architecture.",
+            ],
+        )
+
+    def test_clean_resume_text_normalizes_diamond_summary_bullets(self) -> None:
+        text = clean_resume_text("PROFILE SUMMARY\n❖ Strategic engineer\n◆ Cloud architect")
+
+        self.assertEqual(text, "PROFILE SUMMARY\n- Strategic engineer\n- Cloud architect")
 
     def test_resume_profile_defaults_to_resume_data_only(self) -> None:
         profile = ResumeProfile.model_validate({"data": {"sections": []}})

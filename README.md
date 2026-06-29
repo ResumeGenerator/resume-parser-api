@@ -145,7 +145,7 @@ curl -X POST "http://localhost:8000/api/resumes/parse" \
         {
           "title": "Professional summary",
           "type": "summary",
-          "items": "Backend engineer with experience building FastAPI services and cloud-native APIs."
+          "items": ["Backend engineer with experience building FastAPI services and cloud-native APIs."]
         },
         {
           "title": "Work experience",
