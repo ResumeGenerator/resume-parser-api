@@ -187,3 +187,21 @@ class ResumeParseResponse(StrictBaseModel):
     resumeId: str | None = None
     version: int | None = None
     status: str | None = None
+
+
+class ResumeRephraseRequest(StrictBaseModel):
+    text: str = Field(min_length=1, max_length=8000)
+
+    @field_validator("text", mode="before")
+    @classmethod
+    def normalize_text(cls, value: Any) -> str:
+        return normalize_optional_string(value).strip()
+
+
+class ResumeRephraseResponse(StrictBaseModel):
+    rephrasedText: str = Field(min_length=1)
+
+    @field_validator("rephrasedText", mode="before")
+    @classmethod
+    def normalize_rephrased_text(cls, value: Any) -> str:
+        return normalize_optional_string(value).strip()

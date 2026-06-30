@@ -2,11 +2,15 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from bson import ObjectId
+from fastapi import HTTPException
+from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
+from app.main import app
 from app.core.config import Settings
-from app.core.llm_client import GeminiClient, OpenAIClient, get_llm_client
-from app.models.resume_schema import ResumeProfile
+from app.core.llm_client import GeminiClient, OpenAIClient, get_google_rephrase_client, get_llm_client
+from app.models.resume_schema import ResumeProfile, ResumeRephraseRequest
+from app.services.resume_rephraser import ResumeRephraseService
 from app.services.resume_parser import normalize_resume_profile_payload, split_summary_items
 from app.services.resume_repository import MongoResumeRepository
 from app.utils.text_cleaner import clean_resume_text
@@ -153,6 +157,51 @@ class ResumeSchemaTests(unittest.TestCase):
             ResumeProfile.model_validate(payload)
 
 
+class ResumeRephraseTests(unittest.IsolatedAsyncioTestCase):
+    def test_rephrase_request_strips_text(self) -> None:
+        request = ResumeRephraseRequest.model_validate({"text": "  built APIs  "})
+
+        self.assertEqual(request.text, "built APIs")
+
+    def test_rephrase_request_rejects_blank_text(self) -> None:
+        with self.assertRaises(ValidationError):
+            ResumeRephraseRequest.model_validate({"text": "   "})
+
+    async def test_rephrase_service_validates_strict_response_schema(self) -> None:
+        fake_client = unittest.mock.Mock()
+        fake_client.rephrase_resume_text = AsyncMock(
+            return_value={"rephrasedText": "Built and maintained REST APIs.", "extra": "not allowed"}
+        )
+
+        with self.assertRaises(HTTPException) as error:
+            await ResumeRephraseService(fake_client).rephrase("built APIs")
+
+        self.assertEqual(error.exception.status_code, 502)
+
+    async def test_rephrase_service_rejects_non_resume_commentary(self) -> None:
+        fake_client = unittest.mock.Mock()
+        fake_client.rephrase_resume_text = AsyncMock(
+            return_value={"rephrasedText": "Here is a professional version: Built REST APIs."}
+        )
+
+        with self.assertRaises(HTTPException) as error:
+            await ResumeRephraseService(fake_client).rephrase("built APIs")
+
+        self.assertEqual(error.exception.status_code, 502)
+
+    def test_rephrase_endpoint_returns_validated_response(self) -> None:
+        fake_client = unittest.mock.Mock()
+        fake_client.rephrase_resume_text = AsyncMock(
+            return_value={"rephrasedText": "Built and maintained scalable REST APIs."}
+        )
+
+        with patch("app.api.routes_resume.get_google_rephrase_client", return_value=fake_client):
+            response = TestClient(app).post("/api/resumes/rephrase", json={"text": "built APIs"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"rephrasedText": "Built and maintained scalable REST APIs."})
+
+
 class MongoResumeRepositoryTests(unittest.IsolatedAsyncioTestCase):
     async def test_save_stores_parsed_resume_document(self) -> None:
         repository = MongoResumeRepository.__new__(MongoResumeRepository)
@@ -207,6 +256,13 @@ class LLMClientTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsInstance(client, OpenAIClient)
 
+    def test_get_google_rephrase_client_uses_gemini_regardless_of_parse_provider(self) -> None:
+        settings = Settings(LLM_PROVIDER="openai", OPENAI_API_KEY="openai-key", GEMINI_API_KEY="gemini-key")
+
+        client = get_google_rephrase_client(settings)
+
+        self.assertIsInstance(client, GeminiClient)
+
     async def test_gemini_client_extracts_json_from_generate_content_response(self) -> None:
         settings = Settings(LLM_PROVIDER="gemini", GEMINI_API_KEY="gemini-key", GEMINI_MODEL="gemini-test")
         response_payload = {
@@ -241,6 +297,43 @@ class LLMClientTests(unittest.IsolatedAsyncioTestCase):
         _, kwargs = fake_http_client.post.await_args
         self.assertEqual(kwargs["params"], {"key": "gemini-key"})
         self.assertEqual(kwargs["json"]["generationConfig"]["responseMimeType"], "application/json")
+
+    async def test_gemini_client_rephrases_text_with_resume_prompt(self) -> None:
+        settings = Settings(LLM_PROVIDER="openai", GEMINI_API_KEY="gemini-key", GEMINI_MODEL="gemini-test")
+        response_payload = {
+            "candidates": [
+                {
+                    "content": {
+                        "parts": [
+                            {
+                                "text": '{"rephrasedText":"Built and maintained scalable REST APIs."}'
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+
+        fake_response = unittest.mock.Mock()
+        fake_response.status_code = 200
+        fake_response.json.return_value = response_payload
+        fake_response.text = "ok"
+
+        fake_http_client = unittest.mock.Mock()
+        fake_http_client.__aenter__ = AsyncMock(return_value=fake_http_client)
+        fake_http_client.__aexit__ = AsyncMock(return_value=None)
+        fake_http_client.post = AsyncMock(return_value=fake_response)
+
+        with patch("app.core.llm_client.httpx.AsyncClient", return_value=fake_http_client):
+            response = await GeminiClient(settings).rephrase_resume_text("built APIs")
+
+        self.assertEqual(response["rephrasedText"], "Built and maintained scalable REST APIs.")
+        fake_http_client.post.assert_awaited_once()
+        _, kwargs = fake_http_client.post.await_args
+        self.assertEqual(kwargs["params"], {"key": "gemini-key"})
+        self.assertEqual(kwargs["json"]["generationConfig"]["responseMimeType"], "application/json")
+        self.assertEqual(kwargs["json"]["systemInstruction"]["parts"][0]["text"].count("Rephrase ONLY"), 1)
+        self.assertIn("built APIs", kwargs["json"]["contents"][0]["parts"][0]["text"])
 
 
 if __name__ == "__main__":
