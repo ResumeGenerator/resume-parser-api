@@ -5,12 +5,14 @@ FastAPI service for extracting structured resume data from uploaded PDF, DOCX, o
 ## Features
 
 - `POST /api/resumes/parse` accepts `multipart/form-data`
+- `POST /api/resumes/rephrase` accepts text and returns resume-ready rephrasing
 - Supports `.pdf`, `.docx`, and `.txt`
 - Configurable max upload size through `MAX_FILE_SIZE_MB`
 - Text extraction with PyMuPDF and python-docx
 - Clean whitespace and bullet normalization without stripping skill symbols like `C++`, `C#`, `.NET`, `Node.js`, or `CI/CD`
 - Rejects uploaded documents that do not appear to be resumes
 - LLM integration through OpenAI or Gemini
+- Gemini-backed resume text rephrasing with a dedicated prompt
 - Pydantic validation for the parsed resume profile
 - Stores parsed resume documents in MongoDB
 
@@ -25,12 +27,14 @@ app/
   core/
     config.py
     llm_client.py
+    rephrase_prompt.py
     resume_prompt.py
   models/
     resume_schema.py
   services/
     text_extractor.py
     resume_parser.py
+    resume_rephraser.py
     resume_repository.py
   utils/
     text_cleaner.py
@@ -102,6 +106,8 @@ GEMINI_API_KEY=...
 GEMINI_MODEL=gemini-2.5-flash
 ```
 
+The rephrase endpoint always uses Gemini, so `GEMINI_API_KEY` must be configured even when `LLM_PROVIDER=openai` for resume parsing.
+
 The Dockerfile uses Railway's `PORT` environment variable automatically:
 
 ```text
@@ -117,6 +123,24 @@ curl -X POST "http://localhost:8000/api/resumes/parse" \
   -F "file=@/path/to/resume.pdf" \
   -F "jobDescription=Senior Python Backend Engineer with FastAPI, cloud, Docker, and LLM integration experience."
 ```
+
+## Rephrase Resume Text
+
+```bash
+curl -X POST "http://localhost:8000/api/resumes/rephrase" \
+  -H "Content-Type: application/json" \
+  -d '{"text":"built APIs and fixed production bugs"}'
+```
+
+Response:
+
+```json
+{
+  "rephrasedText": "Built and maintained APIs while resolving production issues."
+}
+```
+
+The endpoint is intended for work experience bullets and professional summary text. It uses the separate `app/core/rephrase_prompt.py` prompt and validates the Gemini JSON response before returning it.
 
 ## Example Response
 

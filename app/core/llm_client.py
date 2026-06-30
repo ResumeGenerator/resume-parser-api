@@ -7,6 +7,7 @@ import httpx
 from fastapi import HTTPException, status
 
 from app.core.config import Settings, get_settings
+from app.core.rephrase_prompt import REPHRASE_SYSTEM_PROMPT, build_rephrase_user_prompt
 from app.core.resume_prompt import SYSTEM_PROMPT, build_user_prompt
 
 
@@ -106,6 +107,34 @@ class GeminiClient(BaseLLMClient):
         content = self._extract_text(response.json())
         return parse_json_response(content)
 
+    async def rephrase_resume_text(self, text: str) -> dict[str, Any]:
+        payload = {
+            "systemInstruction": {
+                "parts": [{"text": REPHRASE_SYSTEM_PROMPT}],
+            },
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [{"text": build_rephrase_user_prompt(text)}],
+                }
+            ],
+            "generationConfig": {
+                "responseMimeType": "application/json",
+                "temperature": 0.2,
+            },
+        }
+        headers = {"Content-Type": "application/json"}
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"
+
+        async with httpx.AsyncClient(timeout=60) as client:
+            response = await client.post(url, json=payload, headers=headers, params={"key": self.api_key})
+
+        if response.status_code >= 400:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Gemini request failed: {response.text}")
+
+        content = self._extract_text(response.json())
+        return parse_json_response(content)
+
     @staticmethod
     def _extract_text(response_payload: dict[str, Any]) -> str:
         try:
@@ -136,3 +165,10 @@ def get_llm_client(settings: Settings | None = None) -> BaseLLMClient:
         return GeminiClient(settings)
 
     raise RuntimeError(f"Unsupported LLM_PROVIDER '{settings.llm_provider}'.")
+
+
+def get_google_rephrase_client(settings: Settings | None = None) -> GeminiClient:
+    settings = settings or get_settings()
+    if not settings.gemini_api_key:
+        raise RuntimeError("GEMINI_API_KEY is required for resume text rephrasing.")
+    return GeminiClient(settings)

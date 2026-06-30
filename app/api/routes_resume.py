@@ -4,10 +4,11 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, s
 
 from app.core.config import Settings, get_settings
 from app.core.database import get_resume_repository
-from app.core.llm_client import get_llm_client
-from app.models.resume_schema import ResumeParseResponse
+from app.core.llm_client import get_google_rephrase_client, get_llm_client
+from app.models.resume_schema import ResumeParseResponse, ResumeRephraseRequest, ResumeRephraseResponse
 from app.services.document_text_extractor import DocumentTextExtractor
 from app.services.resume_parser import ResumeParserService
+from app.services.resume_rephraser import ResumeRephraseService
 from app.services.resume_repository import ResumeRepositoryNotConfiguredError
 from app.utils.file_validator import read_and_validate_file
 from app.utils.resume_detector import validate_resume_document
@@ -76,3 +77,20 @@ async def parse_resume(
         version=1,
         status="parsed",
     )
+
+
+@router.post("/rephrase", response_model=ResumeRephraseResponse)
+async def rephrase_resume_text(
+    payload: ResumeRephraseRequest,
+    settings: Settings = Depends(get_settings),
+) -> ResumeRephraseResponse:
+    try:
+        llm_client = get_google_rephrase_client(settings)
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        ) from exc
+
+    rephraser = ResumeRephraseService(llm_client)
+    return await rephraser.rephrase(payload.text)
