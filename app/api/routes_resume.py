@@ -6,7 +6,7 @@ from pydantic import ValidationError
 
 from app.core.config import Settings, get_settings
 from app.core.database import get_resume_repository
-from app.core.llm_client import get_google_rephrase_client, get_llm_client
+from app.core.llm_client import get_llm_client
 from app.models.resume_schema import ResumeParseResponse, ResumeRephraseRequest, ResumeRephraseResponse
 from app.services.document_text_extractor import DocumentTextExtractor
 from app.services.resume_parser import ResumeParserService
@@ -79,7 +79,7 @@ async def parse_resume(
 
     validate_resume_document(resume_text)
     try:
-        llm_client = get_llm_client()
+        llm_client = get_llm_client(settings)
     except RuntimeError as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -141,7 +141,7 @@ async def rephrase_resume_text(
 ) -> ResumeRephraseResponse:
     payload = await read_rephrase_request(request)
     try:
-        llm_client = get_google_rephrase_client(settings)
+        llm_client = get_llm_client(settings)
     except RuntimeError as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

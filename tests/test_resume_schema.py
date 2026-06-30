@@ -8,7 +8,7 @@ from pydantic import ValidationError
 
 from app.main import app
 from app.core.config import Settings
-from app.core.llm_client import GeminiClient, OpenAIClient, get_google_rephrase_client, get_llm_client
+from app.core.llm_client import OpenAIClient, get_llm_client
 from app.models.resume_schema import ResumeProfile, ResumeRephraseRequest
 from app.services.resume_rephraser import ResumeRephraseService
 from app.services.resume_parser import normalize_resume_profile_payload, split_summary_items
@@ -215,7 +215,7 @@ class ResumeRephraseTests(unittest.IsolatedAsyncioTestCase):
             return_value={"rephrasedText": "Built and maintained scalable REST APIs."}
         )
 
-        with patch("app.api.routes_resume.get_google_rephrase_client", return_value=fake_client):
+        with patch("app.api.routes_resume.get_llm_client", return_value=fake_client):
             response = TestClient(app).post("/api/resumes/rephrase", json={"text": "built APIs"})
 
         self.assertEqual(response.status_code, 200)
@@ -231,7 +231,7 @@ class ResumeRephraseTests(unittest.IsolatedAsyncioTestCase):
         )
         raw_body = '{"text":"built APIs\nfixed production bugs"}'
 
-        with patch("app.api.routes_resume.get_google_rephrase_client", return_value=fake_client):
+        with patch("app.api.routes_resume.get_llm_client", return_value=fake_client):
             response = TestClient(app).post(
                 "/api/resumes/rephrase",
                 content=raw_body,
@@ -257,7 +257,7 @@ class ResumeRephraseTests(unittest.IsolatedAsyncioTestCase):
             ]
         )
 
-        with patch("app.api.routes_resume.get_google_rephrase_client", return_value=fake_client):
+        with patch("app.api.routes_resume.get_llm_client", return_value=fake_client):
             response = TestClient(app).post(
                 "/api/resumes/rephrase",
                 content="built APIs\nfixed production bugs",
@@ -325,13 +325,6 @@ class MongoResumeRepositoryTests(unittest.IsolatedAsyncioTestCase):
 
 
 class LLMClientTests(unittest.IsolatedAsyncioTestCase):
-    def test_get_llm_client_supports_configured_gemini_provider(self) -> None:
-        settings = Settings(LLM_PROVIDER="gemini", GEMINI_API_KEY="gemini-key")
-
-        client = get_llm_client(settings)
-
-        self.assertIsInstance(client, GeminiClient)
-
     def test_get_llm_client_keeps_openai_provider_default(self) -> None:
         settings = Settings(LLM_PROVIDER="openai", OPENAI_API_KEY="openai-key")
 
@@ -339,28 +332,17 @@ class LLMClientTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsInstance(client, OpenAIClient)
 
-    def test_get_google_rephrase_client_uses_gemini_regardless_of_parse_provider(self) -> None:
-        settings = Settings(LLM_PROVIDER="openai", OPENAI_API_KEY="openai-key", GEMINI_API_KEY="gemini-key")
+    def test_get_llm_client_rejects_non_openai_provider(self) -> None:
+        settings = Settings(LLM_PROVIDER="unsupported", OPENAI_API_KEY="openai-key")
 
-        client = get_google_rephrase_client(settings)
+        with self.assertRaises(RuntimeError) as error:
+            get_llm_client(settings)
 
-        self.assertIsInstance(client, GeminiClient)
+        self.assertIn("Only 'openai' is supported", str(error.exception))
 
-    async def test_gemini_client_extracts_json_from_generate_content_response(self) -> None:
-        settings = Settings(LLM_PROVIDER="gemini", GEMINI_API_KEY="gemini-key", GEMINI_MODEL="gemini-test")
-        response_payload = {
-            "candidates": [
-                {
-                    "content": {
-                        "parts": [
-                            {
-                                "text": '{"profile":{"data":{"name":"Alex","sections":[]}}}'
-                            }
-                        ]
-                    }
-                }
-            ]
-        }
+    async def test_openai_client_extracts_json_from_chat_completion_response(self) -> None:
+        settings = Settings(LLM_PROVIDER="openai", OPENAI_API_KEY="openai-key", OPENAI_MODEL="openai-test")
+        response_payload = {"choices": [{"message": {"content": '{"profile":{"data":{"name":"Alex","sections":[]}}}'}}]}
 
         fake_response = unittest.mock.Mock()
         fake_response.status_code = 200
@@ -373,29 +355,18 @@ class LLMClientTests(unittest.IsolatedAsyncioTestCase):
         fake_http_client.post = AsyncMock(return_value=fake_response)
 
         with patch("app.core.llm_client.httpx.AsyncClient", return_value=fake_http_client):
-            profile = await GeminiClient(settings).extract_resume_profile("Resume text", None)
+            profile = await OpenAIClient(settings).extract_resume_profile("Resume text", None)
 
         self.assertEqual(profile["profile"]["data"]["name"], "Alex")
         fake_http_client.post.assert_awaited_once()
         _, kwargs = fake_http_client.post.await_args
-        self.assertEqual(kwargs["params"], {"key": "gemini-key"})
-        self.assertEqual(kwargs["json"]["generationConfig"]["responseMimeType"], "application/json")
+        self.assertEqual(kwargs["headers"]["Authorization"], "Bearer openai-key")
+        self.assertEqual(kwargs["json"]["model"], "openai-test")
+        self.assertEqual(kwargs["json"]["response_format"], {"type": "json_object"})
 
-    async def test_gemini_client_rephrases_text_with_resume_prompt(self) -> None:
-        settings = Settings(LLM_PROVIDER="openai", GEMINI_API_KEY="gemini-key", GEMINI_MODEL="gemini-test")
-        response_payload = {
-            "candidates": [
-                {
-                    "content": {
-                        "parts": [
-                            {
-                                "text": '{"rephrasedText":"Built and maintained scalable REST APIs."}'
-                            }
-                        ]
-                    }
-                }
-            ]
-        }
+    async def test_openai_client_rephrases_text_with_resume_prompt(self) -> None:
+        settings = Settings(LLM_PROVIDER="openai", OPENAI_API_KEY="openai-key", OPENAI_MODEL="openai-test")
+        response_payload = {"choices": [{"message": {"content": '{"rephrasedText":"Built and maintained scalable REST APIs."}'}}]}
 
         fake_response = unittest.mock.Mock()
         fake_response.status_code = 200
@@ -408,16 +379,17 @@ class LLMClientTests(unittest.IsolatedAsyncioTestCase):
         fake_http_client.post = AsyncMock(return_value=fake_response)
 
         with patch("app.core.llm_client.httpx.AsyncClient", return_value=fake_http_client):
-            response = await GeminiClient(settings).rephrase_resume_text("built APIs")
+            response = await OpenAIClient(settings).rephrase_resume_text("built APIs")
 
         self.assertEqual(response["rephrasedText"], "Built and maintained scalable REST APIs.")
         fake_http_client.post.assert_awaited_once()
         _, kwargs = fake_http_client.post.await_args
-        self.assertEqual(kwargs["params"], {"key": "gemini-key"})
-        self.assertEqual(kwargs["json"]["generationConfig"]["responseMimeType"], "application/json")
-        self.assertEqual(kwargs["json"]["systemInstruction"]["parts"][0]["text"].count("Rephrase ONLY"), 1)
-        self.assertIn("Preserve the input structure", kwargs["json"]["systemInstruction"]["parts"][0]["text"])
-        self.assertIn("built APIs", kwargs["json"]["contents"][0]["parts"][0]["text"])
+        self.assertEqual(kwargs["headers"]["Authorization"], "Bearer openai-key")
+        self.assertEqual(kwargs["json"]["model"], "openai-test")
+        self.assertEqual(kwargs["json"]["response_format"], {"type": "json_object"})
+        self.assertEqual(kwargs["json"]["messages"][0]["content"].count("Rephrase ONLY"), 1)
+        self.assertIn("Preserve the input structure", kwargs["json"]["messages"][0]["content"])
+        self.assertIn("built APIs", kwargs["json"]["messages"][1]["content"])
 
 
 if __name__ == "__main__":

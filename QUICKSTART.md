@@ -22,13 +22,7 @@ Your resume parser API now has **automatic OCR fallback support** for scanned/im
    OCR_DPI=200
    ```
 
-   To parse resumes with Gemini instead of OpenAI, set:
-   ```env
-   LLM_PROVIDER=gemini
-   GEMINI_API_KEY=...
-   GEMINI_MODEL=gemini-2.5-flash
-   ```
-   OCR fallback still uses OpenAI vision and requires `OPENAI_API_KEY` when `OCR_FALLBACK_ENABLED=true`.
+   Resume parsing, rephrasing, and OCR fallback all use OpenAI, so `OPENAI_API_KEY` is required for normal operation.
 
 ## How It Works
 
