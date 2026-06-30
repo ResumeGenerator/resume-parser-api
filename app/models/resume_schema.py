@@ -191,8 +191,9 @@ class ResumeParseResponse(StrictBaseModel):
 
 class ResumeRephraseRequest(StrictBaseModel):
     text: str = Field(min_length=1, max_length=8000)
+    prompt: str | None = Field(default=None, max_length=4000)
 
-    @field_validator("text", mode="before")
+    @field_validator("text", "prompt", mode="before")
     @classmethod
     def normalize_text(cls, value: Any) -> str:
         return normalize_optional_string(value).strip()

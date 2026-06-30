@@ -132,6 +132,8 @@ await fetch("http://localhost:8000/api/resumes/rephrase", {
 
 Multiline input is returned in the same structure: each line-separated or paragraph-separated text block is rephrased independently and joined back with the original line breaks.
 
+The request may include a legacy `prompt` field from older clients, but the backend ignores it and always uses the server-side rephrase prompt.
+
 Raw text is also accepted when sent as `text/plain`:
 
 ```bash

@@ -163,6 +163,17 @@ class ResumeRephraseTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(request.text, "built APIs")
 
+    def test_rephrase_request_accepts_legacy_prompt_field(self) -> None:
+        request = ResumeRephraseRequest.model_validate(
+            {
+                "text": "built APIs",
+                "prompt": "Improve only resume-related text.",
+            }
+        )
+
+        self.assertEqual(request.text, "built APIs")
+        self.assertEqual(request.prompt, "Improve only resume-related text.")
+
     def test_rephrase_request_rejects_blank_text(self) -> None:
         with self.assertRaises(ValidationError):
             ResumeRephraseRequest.model_validate({"text": "   "})
@@ -216,10 +227,17 @@ class ResumeRephraseTests(unittest.IsolatedAsyncioTestCase):
         )
 
         with patch("app.api.routes_resume.get_llm_client", return_value=fake_client):
-            response = TestClient(app).post("/api/resumes/rephrase", json={"text": "built APIs"})
+            response = TestClient(app).post(
+                "/api/resumes/rephrase",
+                json={
+                    "text": "built APIs",
+                    "prompt": "Improve only resume-related text.",
+                },
+            )
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"rephrasedText": "Built and maintained scalable REST APIs."})
+        fake_client.rephrase_resume_text.assert_awaited_once_with("built APIs")
 
     def test_rephrase_endpoint_accepts_json_with_unescaped_newline(self) -> None:
         fake_client = unittest.mock.Mock()
