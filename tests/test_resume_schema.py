@@ -189,6 +189,26 @@ class ResumeRephraseTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(error.exception.status_code, 502)
 
+    async def test_rephrase_service_preserves_line_separated_text_blocks(self) -> None:
+        fake_client = unittest.mock.Mock()
+        fake_client.rephrase_resume_text = AsyncMock(
+            side_effect=[
+                {"rephrasedText": "Built and maintained REST APIs."},
+                {"rephrasedText": "Resolved production defects across backend services."},
+            ]
+        )
+
+        response = await ResumeRephraseService(fake_client).rephrase("built APIs\n\nfixed production bugs")
+
+        self.assertEqual(
+            response.rephrasedText,
+            "Built and maintained REST APIs.\n\nResolved production defects across backend services.",
+        )
+        self.assertEqual(
+            fake_client.rephrase_resume_text.await_args_list,
+            [unittest.mock.call("built APIs"), unittest.mock.call("fixed production bugs")],
+        )
+
     def test_rephrase_endpoint_returns_validated_response(self) -> None:
         fake_client = unittest.mock.Mock()
         fake_client.rephrase_resume_text = AsyncMock(
@@ -200,6 +220,69 @@ class ResumeRephraseTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"rephrasedText": "Built and maintained scalable REST APIs."})
+
+    def test_rephrase_endpoint_accepts_json_with_unescaped_newline(self) -> None:
+        fake_client = unittest.mock.Mock()
+        fake_client.rephrase_resume_text = AsyncMock(
+            side_effect=[
+                {"rephrasedText": "Built and maintained APIs."},
+                {"rephrasedText": "Resolved production issues."},
+            ]
+        )
+        raw_body = '{"text":"built APIs\nfixed production bugs"}'
+
+        with patch("app.api.routes_resume.get_google_rephrase_client", return_value=fake_client):
+            response = TestClient(app).post(
+                "/api/resumes/rephrase",
+                content=raw_body,
+                headers={"Content-Type": "application/json"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            {"rephrasedText": "Built and maintained APIs.\nResolved production issues."},
+        )
+        self.assertEqual(
+            fake_client.rephrase_resume_text.await_args_list,
+            [unittest.mock.call("built APIs"), unittest.mock.call("fixed production bugs")],
+        )
+
+    def test_rephrase_endpoint_accepts_text_plain(self) -> None:
+        fake_client = unittest.mock.Mock()
+        fake_client.rephrase_resume_text = AsyncMock(
+            side_effect=[
+                {"rephrasedText": "Built and maintained APIs."},
+                {"rephrasedText": "Resolved production issues."},
+            ]
+        )
+
+        with patch("app.api.routes_resume.get_google_rephrase_client", return_value=fake_client):
+            response = TestClient(app).post(
+                "/api/resumes/rephrase",
+                content="built APIs\nfixed production bugs",
+                headers={"Content-Type": "text/plain"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            {"rephrasedText": "Built and maintained APIs.\nResolved production issues."},
+        )
+        self.assertEqual(
+            fake_client.rephrase_resume_text.await_args_list,
+            [unittest.mock.call("built APIs"), unittest.mock.call("fixed production bugs")],
+        )
+
+    def test_rephrase_endpoint_rejects_malformed_json_with_helpful_message(self) -> None:
+        response = TestClient(app).post(
+            "/api/resumes/rephrase",
+            content='{"text":"built APIs"',
+            headers={"Content-Type": "application/json"},
+        )
+
+        self.assertEqual(response.status_code, 422)
+        self.assertIn("JSON object", response.json()["detail"]["message"])
 
 
 class MongoResumeRepositoryTests(unittest.IsolatedAsyncioTestCase):
@@ -333,6 +416,7 @@ class LLMClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(kwargs["params"], {"key": "gemini-key"})
         self.assertEqual(kwargs["json"]["generationConfig"]["responseMimeType"], "application/json")
         self.assertEqual(kwargs["json"]["systemInstruction"]["parts"][0]["text"].count("Rephrase ONLY"), 1)
+        self.assertIn("Preserve the input structure", kwargs["json"]["systemInstruction"]["parts"][0]["text"])
         self.assertIn("built APIs", kwargs["json"]["contents"][0]["parts"][0]["text"])
 
 

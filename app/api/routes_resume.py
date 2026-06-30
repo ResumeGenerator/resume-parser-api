@@ -1,6 +1,8 @@
+import json
 import logging
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
+from pydantic import ValidationError
 
 from app.core.config import Settings, get_settings
 from app.core.database import get_resume_repository
@@ -16,6 +18,47 @@ from app.utils.resume_detector import validate_resume_document
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/resumes", tags=["resumes"])
+HTTP_422_UNPROCESSABLE_CONTENT = 422
+
+
+async def read_rephrase_request(request: Request) -> ResumeRephraseRequest:
+    body = await request.body()
+    content_type = request.headers.get("content-type", "").split(";", 1)[0].lower()
+
+    try:
+        body_text = body.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise HTTPException(
+            status_code=HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Request body must be UTF-8 encoded.",
+        ) from exc
+
+    if content_type == "text/plain":
+        payload_data: object = {"text": body_text}
+    else:
+        try:
+            payload_data = json.loads(body_text, strict=False)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(
+                status_code=HTTP_422_UNPROCESSABLE_CONTENT,
+                detail={
+                    "message": (
+                        "Request body must be a JSON object with a text field. "
+                        "Escape raw newline, tab, and other control characters, "
+                        "or build the request body with JSON.stringify."
+                    ),
+                    "error": exc.msg,
+                    "position": exc.pos,
+                },
+            ) from exc
+
+    try:
+        return ResumeRephraseRequest.model_validate(payload_data)
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=exc.errors(),
+        ) from exc
 
 
 @router.post("/parse", response_model=ResumeParseResponse)
@@ -79,11 +122,24 @@ async def parse_resume(
     )
 
 
-@router.post("/rephrase", response_model=ResumeRephraseResponse)
+@router.post(
+    "/rephrase",
+    response_model=ResumeRephraseResponse,
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {
+                "application/json": {"schema": ResumeRephraseRequest.model_json_schema()},
+                "text/plain": {"schema": {"type": "string", "minLength": 1, "maxLength": 8000}},
+            },
+        }
+    },
+)
 async def rephrase_resume_text(
-    payload: ResumeRephraseRequest,
+    request: Request,
     settings: Settings = Depends(get_settings),
 ) -> ResumeRephraseResponse:
+    payload = await read_rephrase_request(request)
     try:
         llm_client = get_google_rephrase_client(settings)
     except RuntimeError as exc:

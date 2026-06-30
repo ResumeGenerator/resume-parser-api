@@ -132,6 +132,27 @@ curl -X POST "http://localhost:8000/api/resumes/rephrase" \
   -d '{"text":"built APIs and fixed production bugs"}'
 ```
 
+For multiline text, build the JSON with your HTTP client instead of manually interpolating a string:
+
+```js
+await fetch("http://localhost:8000/api/resumes/rephrase", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ text }),
+});
+```
+
+Multiline input is returned in the same structure: each line-separated or paragraph-separated text block is rephrased independently and joined back with the original line breaks.
+
+Raw text is also accepted when sent as `text/plain`:
+
+```bash
+curl -X POST "http://localhost:8000/api/resumes/rephrase" \
+  -H "Content-Type: text/plain" \
+  --data-binary "built APIs
+fixed production bugs"
+```
+
 Response:
 
 ```json

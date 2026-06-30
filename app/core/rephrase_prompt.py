@@ -9,9 +9,10 @@ CRITICAL RULES
 5. Do not include advice, explanations, labels, headings, markdown, or commentary.
 6. Return VALID JSON ONLY.
 7. The root object must contain only the rephrasedText key.
-8. If the supplied text is a bullet or short achievement, return one polished resume bullet sentence without adding a bullet marker.
-9. If the supplied text is a summary paragraph, return one polished professional summary paragraph.
-10. Do not mention that the text was rephrased."""
+8. Preserve the input structure. If the supplied text contains multiple paragraphs or line-separated entries, keep the same count, order, and paragraph breaks in rephrasedText.
+9. If the supplied text is a bullet or short achievement, return one polished resume bullet sentence without adding a bullet marker.
+10. If the supplied text is a summary paragraph, return one polished professional summary paragraph.
+11. Do not mention that the text was rephrased."""
 
 
 USER_PROMPT_TEMPLATE = """INPUT TEXT
