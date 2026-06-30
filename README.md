@@ -6,6 +6,7 @@ FastAPI service for extracting structured resume data from uploaded PDF, DOCX, o
 
 - `POST /api/resumes/parse` accepts `multipart/form-data`
 - `POST /api/resumes/rephrase` accepts text and returns resume-ready rephrasing
+- `POST /api/resumes/{resume_id}/edits` saves a single edited profile record per parsed resume
 - Supports `.pdf`, `.docx`, and `.txt`
 - Configurable max upload size through `MAX_FILE_SIZE_MB`
 - Text extraction with PyMuPDF and python-docx
@@ -83,6 +84,7 @@ docker run --env-file .env -p 8000:8000 resume-parser-service
 | `MONGO_URI` | MongoDB connection URI; `MONGODB_URI` and `MONGO_URL` are also accepted |
 | `MONGO_DATABASE` | MongoDB database name; `MONGO_DB` and `MONGODB_DATABASE` are also accepted |
 | `MONGO_COLLECTION` | Collection for parsed resume documents; `MONGODB_RESUME_COLLECTION` is also accepted |
+| `MONGO_EDITED_COLLECTION` | Collection for edited resume documents; `MONGODB_EDITED_RESUME_COLLECTION` is also accepted |
 
 ## Railway Deployment
 
@@ -94,6 +96,7 @@ LLM_PROVIDER=openai
 MONGO_URI=...
 MONGO_DATABASE=resume_parser
 MONGO_COLLECTION=parsed_resumes
+MONGO_EDITED_COLLECTION=edited_resumes
 ```
 
 The Dockerfile uses Railway's `PORT` environment variable automatically:
@@ -192,7 +195,7 @@ The endpoint is intended for work experience bullets and professional summary te
               "location": "Austin, TX",
               "jobType": "",
               "reasonForLeaving": "",
-              "start": "2020",
+              "start": "01-01-2020",
               "end": "",
               "achievements": ["Built and maintained FastAPI services.", "Reduced API latency by 35%."]
             }

@@ -22,7 +22,7 @@ CRITICAL RULES
    * internship
    * hobby
 10. Section titles should be human-readable, for example "Professional summary", "Work experience", "Education", and "Skills".
-11. Dates should be copied in the clearest concise form present in the resume, such as "Jan 2024", "2021", or "Jan 2020 - Mar 2023".
+11. Work experience start and end dates must use DD-MM-YYYY format, for example "23-06-2026". If only month and year are present, use day "01" (for example "Dec 22" becomes "01-12-2022"). If only a year is present, use "01-01-YYYY". For current roles, use "Present". Other date fields should be copied in the clearest concise form present in the resume.
 12. If a Target Job Description is provided, do not add information from it to the resume. You may use it only to choose the most relevant existing summary wording, skills, and achievement ordering.
 
 SECTION MAPPING

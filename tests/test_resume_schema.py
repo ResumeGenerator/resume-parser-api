@@ -140,6 +140,49 @@ class ResumeSchemaTests(unittest.TestCase):
         self.assertEqual(profile.data.sections[0].items, payload["data"]["sections"][0]["items"])
         self.assertEqual(profile.data.sections[1].items[0].company, "Lexis Nexis")
 
+    def test_work_experience_dates_normalize_to_day_month_year(self) -> None:
+        profile = ResumeProfile.model_validate(
+            {
+                "data": {
+                    "sections": [
+                        {
+                            "title": "Work experience",
+                            "type": "experience",
+                            "items": [
+                                {
+                                    "position": "Senior Engineer",
+                                    "company": "Example Co",
+                                    "location": "",
+                                    "jobType": "",
+                                    "reasonForLeaving": "",
+                                    "start": "Dec 22",
+                                    "end": "June 23, 2026",
+                                    "achievements": [],
+                                },
+                                {
+                                    "position": "Lead Engineer",
+                                    "company": "Current Co",
+                                    "location": "",
+                                    "jobType": "",
+                                    "reasonForLeaving": "",
+                                    "start": "2024",
+                                    "end": "current",
+                                    "achievements": [],
+                                },
+                            ],
+                        }
+                    ]
+                }
+            }
+        )
+
+        first_experience = profile.data.sections[0].items[0]
+        second_experience = profile.data.sections[0].items[1]
+        self.assertEqual(first_experience.start, "01-12-2022")
+        self.assertEqual(first_experience.end, "23-06-2026")
+        self.assertEqual(second_experience.start, "01-01-2024")
+        self.assertEqual(second_experience.end, "Present")
+
     def test_resume_profile_forbids_template_presentation_fields(self) -> None:
         payload = {
             "data": {"sections": []},
@@ -340,6 +383,68 @@ class MongoResumeRepositoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(saved_document["status"], "parsed")
         self.assertEqual(saved_document["profile"]["data"]["name"], "Alex Morgan")
         self.assertEqual(saved_document["source"]["createdFrom"], "parse")
+
+    async def test_save_edited_upserts_single_record_per_resume(self) -> None:
+        repository = MongoResumeRepository.__new__(MongoResumeRepository)
+        repository.database_name = "resume_parser"
+        repository.collection_name = "parsed_resumes"
+        repository.edited_collection_name = "edited_resumes"
+        repository.collection = unittest.mock.Mock()
+        repository.edited_collection = unittest.mock.Mock()
+
+        original_id = ObjectId()
+        original_document = {
+            "_id": original_id,
+            "resumeId": str(original_id),
+            "version": 1,
+            "status": "parsed",
+            "profile": {"data": {"name": "Alex Morgan", "sections": []}},
+            "metadata": {"filename": "alex.pdf"},
+            "source": {"jobDescription": "Python backend engineer"},
+        }
+        edited_document: dict | None = None
+
+        async def update_one(filter_document: dict, update_document: dict, upsert: bool = False) -> unittest.mock.Mock:
+            nonlocal edited_document
+            edited_document = {
+                **update_document["$setOnInsert"],
+                **update_document["$set"],
+            }
+            return unittest.mock.Mock(matched_count=0, modified_count=0, upserted_id=edited_document["_id"])
+
+        async def find_edited(*args: object, **kwargs: object) -> dict:
+            self.assertIsNotNone(edited_document)
+            return edited_document
+
+        repository.collection.find_one = AsyncMock(return_value=original_document)
+        repository.edited_collection.update_one = AsyncMock(side_effect=update_one)
+        repository.edited_collection.find_one = AsyncMock(side_effect=find_edited)
+
+        profile = ResumeProfile.model_validate(
+            {
+                "data": {
+                    "name": "Alex Morgan",
+                    "title": "Principal Engineer",
+                    "sections": [],
+                }
+            }
+        )
+
+        saved_document = await repository.save_edited(str(original_id), profile)
+
+        repository.edited_collection.update_one.assert_awaited_once()
+        filter_document = repository.edited_collection.update_one.await_args.args[0]
+        update_document = repository.edited_collection.update_one.await_args.args[1]
+        self.assertEqual(filter_document, {"resumeId": str(original_id)})
+        self.assertTrue(repository.edited_collection.update_one.await_args.kwargs["upsert"])
+        self.assertEqual(update_document["$set"]["version"], 1)
+        self.assertEqual(update_document["$set"]["status"], "edited")
+        self.assertEqual(saved_document["id"], str(original_id))
+        self.assertEqual(saved_document["resumeId"], str(original_id))
+        self.assertEqual(saved_document["version"], 1)
+        self.assertEqual(saved_document["status"], "edited")
+        self.assertEqual(saved_document["metadata"], {"filename": "alex.pdf"})
+        self.assertEqual(saved_document["profile"]["data"]["title"], "Principal Engineer")
 
 
 class LLMClientTests(unittest.IsolatedAsyncioTestCase):

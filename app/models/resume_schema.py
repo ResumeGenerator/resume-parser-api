@@ -1,3 +1,5 @@
+import re
+from datetime import date
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -9,6 +11,141 @@ def normalize_optional_string(value: Any) -> str:
     if isinstance(value, str):
         return value
     return str(value)
+
+
+_MONTH_NUMBERS = {
+    "jan": 1,
+    "january": 1,
+    "feb": 2,
+    "february": 2,
+    "mar": 3,
+    "march": 3,
+    "apr": 4,
+    "april": 4,
+    "may": 5,
+    "jun": 6,
+    "june": 6,
+    "jul": 7,
+    "july": 7,
+    "aug": 8,
+    "august": 8,
+    "sep": 9,
+    "sept": 9,
+    "september": 9,
+    "oct": 10,
+    "october": 10,
+    "nov": 11,
+    "november": 11,
+    "dec": 12,
+    "december": 12,
+}
+_MONTH_PATTERN = "|".join(sorted(_MONTH_NUMBERS, key=len, reverse=True))
+_CURRENT_ROLE_VALUES = {"present", "current", "currently", "now", "ongoing", "to date", "till date"}
+
+
+def _expand_year(value: str) -> int | None:
+    year_text = value.strip().lstrip("'")
+    if not year_text.isdigit():
+        return None
+
+    if len(year_text) == 2:
+        year = int(year_text)
+        return 1900 + year if year >= 70 else 2000 + year
+    if len(year_text) == 4:
+        return int(year_text)
+    return None
+
+
+def _format_date(day: int, month: int, year: int) -> str | None:
+    if year < 1900 or year > 2100:
+        return None
+    try:
+        date(year, month, day)
+        return f"{day:02d}-{month:02d}-{year:04d}" if day and month else None
+    except ValueError:
+        return None
+
+
+def _valid_date(day: int, month: int, year: int) -> str | None:
+    if month < 1 or month > 12:
+        return None
+    if day < 1 or day > 31:
+        return None
+    return _format_date(day, month, year)
+
+
+def normalize_work_experience_date(value: Any) -> str:
+    text = normalize_optional_string(value).strip()
+    if not text:
+        return ""
+
+    compact = re.sub(r"\s+", " ", text).strip()
+    if compact.strip(" .").lower() in _CURRENT_ROLE_VALUES:
+        return "Present"
+
+    normalized = re.sub(r"\b(\d{1,2})(?:st|nd|rd|th)\b", r"\1", compact, flags=re.IGNORECASE)
+    normalized = normalized.replace(",", " ").replace(".", " ")
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+
+    match = re.fullmatch(r"(\d{4})[/-](\d{1,2})[/-](\d{1,2})", normalized)
+    if match:
+        year = _expand_year(match.group(1))
+        if year is not None and (formatted := _valid_date(int(match.group(3)), int(match.group(2)), year)):
+            return formatted
+
+    match = re.fullmatch(r"(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})", normalized)
+    if match:
+        year = _expand_year(match.group(3))
+        if year is not None and (formatted := _valid_date(int(match.group(1)), int(match.group(2)), year)):
+            return formatted
+
+    match = re.fullmatch(r"(\d{4})[/-](\d{1,2})", normalized)
+    if match:
+        year = _expand_year(match.group(1))
+        if year is not None and (formatted := _valid_date(1, int(match.group(2)), year)):
+            return formatted
+
+    match = re.fullmatch(r"(\d{1,2})[/-](\d{2,4})", normalized)
+    if match:
+        year = _expand_year(match.group(2))
+        if year is not None and (formatted := _valid_date(1, int(match.group(1)), year)):
+            return formatted
+
+    match = re.fullmatch(rf"(?i)({_MONTH_PATTERN})\s+(\d{{1,2}})\s+(\d{{2,4}})", normalized)
+    if match:
+        year = _expand_year(match.group(3))
+        month = _MONTH_NUMBERS[match.group(1).lower()]
+        if year is not None and (formatted := _valid_date(int(match.group(2)), month, year)):
+            return formatted
+
+    match = re.fullmatch(rf"(?i)(\d{{1,2}})\s+({_MONTH_PATTERN})\s+(\d{{2,4}})", normalized)
+    if match:
+        year = _expand_year(match.group(3))
+        month = _MONTH_NUMBERS[match.group(2).lower()]
+        if year is not None and (formatted := _valid_date(int(match.group(1)), month, year)):
+            return formatted
+
+    match = re.fullmatch(rf"(?i)({_MONTH_PATTERN})\s+(\d{{2,4}})", normalized)
+    if match:
+        year = _expand_year(match.group(2))
+        month = _MONTH_NUMBERS[match.group(1).lower()]
+        if year is not None and (formatted := _valid_date(1, month, year)):
+            return formatted
+
+    match = re.fullmatch(rf"(?i)(\d{{2,4}})\s+({_MONTH_PATTERN})", normalized)
+    if match:
+        year = _expand_year(match.group(1))
+        month = _MONTH_NUMBERS[match.group(2).lower()]
+        if year is not None and (formatted := _valid_date(1, month, year)):
+            return formatted
+
+    match = re.fullmatch(r"\d{2,4}", normalized)
+    if match:
+        year = _expand_year(normalized)
+        if year is not None and (formatted := _valid_date(1, 1, year)):
+            return formatted
+
+    return compact
 
 
 class StrictBaseModel(BaseModel):
@@ -25,10 +162,15 @@ class ExperienceSectionItem(StrictBaseModel):
     end: str = ""
     achievements: list[str] = Field(default_factory=list)
 
-    @field_validator("position", "company", "location", "jobType", "reasonForLeaving", "start", "end", mode="before")
+    @field_validator("position", "company", "location", "jobType", "reasonForLeaving", mode="before")
     @classmethod
     def normalize_strings(cls, value: Any) -> str:
         return normalize_optional_string(value)
+
+    @field_validator("start", "end", mode="before")
+    @classmethod
+    def normalize_dates(cls, value: Any) -> str:
+        return normalize_work_experience_date(value)
 
 
 class EducationSectionItem(StrictBaseModel):
