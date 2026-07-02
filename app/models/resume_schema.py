@@ -175,6 +175,7 @@ class ExperienceSectionItem(StrictBaseModel):
 
 class EducationSectionItem(StrictBaseModel):
     degree: str = ""
+    fieldOfStudy: str = ""
     school: str = ""
     faculty: str = ""
     department: str = ""
@@ -184,7 +185,18 @@ class EducationSectionItem(StrictBaseModel):
     end: str = ""
     highlights: list[str] = Field(default_factory=list)
 
-    @field_validator("degree", "school", "faculty", "department", "location", "years", "start", "end", mode="before")
+    @field_validator(
+        "degree",
+        "fieldOfStudy",
+        "school",
+        "faculty",
+        "department",
+        "location",
+        "years",
+        "start",
+        "end",
+        mode="before",
+    )
     @classmethod
     def normalize_strings(cls, value: Any) -> str:
         return normalize_optional_string(value)

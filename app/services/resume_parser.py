@@ -17,10 +17,37 @@ _LINE_ITEM_DELIMITER_RE = re.compile(
 _INLINE_GRAPHIC_DELIMITER_RE = re.compile(r"\s*[•◦▪▫‣⁃∙●○■□◆◇❖➢➤✓✔]\s+")
 _INLINE_HYPHEN_DELIMITER_RE = re.compile(r"\s+-\s+(?=[A-Z0-9])")
 _WHITESPACE_RE = re.compile(r"\s+")
+_TRAILING_FIELD_OF_STUDY_RE = re.compile(r"^(?P<degree>.+?)\s*\((?P<field>[^()]+)\)\s*$")
+_SKILL_SPLIT_RE = re.compile(r"(?:\r?\n|[;,]|\s+\|\s+)")
+_SKILL_BULLET_PREFIX_RE = re.compile(r"^\s*(?:[-*]|\d+[.)])\s+")
+_SKILL_LABEL_PREFIX_RE = re.compile(
+    r"(?i)^\s*(?:technical\s+skills|skills|core\s+competencies|competencies|"
+    r"programming\s+languages|languages|frameworks|libraries|tools|technologies|"
+    r"databases|cloud|methodologies)\s*:\s*"
+)
+_FIELD_OF_STUDY_KEYS = ("fieldOfStudy", "field_of_study", "field", "major", "specialization", "specialisation")
+_NON_FIELD_OF_STUDY_MARKERS = {
+    "hon",
+    "hons",
+    "honor",
+    "honors",
+    "honour",
+    "honours",
+    "with honors",
+    "with honours",
+    "distinction",
+    "merit",
+}
 
 
 def _normalize_summary_item_text(value: str) -> str:
     return _WHITESPACE_RE.sub(" ", value).strip(" \t\r\n-*:;")
+
+
+def _clean_optional_text(value: object) -> str:
+    if value is None:
+        return ""
+    return _WHITESPACE_RE.sub(" ", str(value)).strip(" \t\r\n-*:;")
 
 
 def split_summary_items(value: str) -> list[str]:
@@ -82,6 +109,151 @@ def normalize_summary_section_items(raw_profile: dict) -> None:
                 section["items"] = summary_items
 
 
+def _split_degree_field_of_study(degree: str) -> tuple[str, str]:
+    match = _TRAILING_FIELD_OF_STUDY_RE.fullmatch(degree.strip())
+    if not match:
+        return degree, ""
+
+    parsed_degree = _clean_optional_text(match.group("degree"))
+    parsed_field = _clean_optional_text(match.group("field"))
+    if not parsed_degree or not parsed_field:
+        return degree, ""
+
+    marker = parsed_field.lower().strip(".")
+    if marker in _NON_FIELD_OF_STUDY_MARKERS:
+        return degree, ""
+
+    return parsed_degree, parsed_field
+
+
+def normalize_education_field_of_study(raw_profile: dict) -> None:
+    data = raw_profile.get("data")
+    if not isinstance(data, dict):
+        return
+
+    sections = data.get("sections")
+    if not isinstance(sections, list):
+        return
+
+    for section in sections:
+        if not isinstance(section, dict):
+            continue
+
+        section_type = section.get("type")
+        if not isinstance(section_type, str) or section_type.strip().lower() != "education":
+            continue
+
+        items = section.get("items")
+        if not isinstance(items, list):
+            continue
+
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+
+            field_of_study = ""
+            for key in _FIELD_OF_STUDY_KEYS:
+                if key not in item:
+                    continue
+                value = _clean_optional_text(item.get(key))
+                if value and not field_of_study:
+                    field_of_study = value
+                if key != "fieldOfStudy":
+                    item.pop(key, None)
+
+            degree = _clean_optional_text(item.get("degree"))
+            if degree:
+                parsed_degree, parsed_field = _split_degree_field_of_study(degree)
+                if parsed_field:
+                    item["degree"] = parsed_degree
+                    if not field_of_study:
+                        field_of_study = parsed_field
+
+            if field_of_study:
+                item["fieldOfStudy"] = field_of_study
+
+
+def _split_skill_names(value: object) -> list[str]:
+    text = _SKILL_LABEL_PREFIX_RE.sub("", _clean_optional_text(value))
+    if not text:
+        return []
+
+    names: list[str] = []
+    for part in _SKILL_SPLIT_RE.split(text):
+        name = _SKILL_LABEL_PREFIX_RE.sub("", _SKILL_BULLET_PREFIX_RE.sub("", _clean_optional_text(part)))
+        if name:
+            names.append(name)
+    return names
+
+
+def _append_skill_item(items: list[dict[str, str]], seen: dict[str, int], name: str, level: str = "") -> None:
+    key = name.casefold()
+    if key in seen:
+        index = seen[key]
+        if level and not items[index]["level"]:
+            items[index]["level"] = level
+        return
+
+    seen[key] = len(items)
+    items.append({"name": name, "level": level})
+
+
+def normalize_skill_section_items(raw_profile: dict) -> None:
+    data = raw_profile.get("data")
+    if not isinstance(data, dict):
+        return
+
+    sections = data.get("sections")
+    if not isinstance(sections, list):
+        return
+
+    for section in sections:
+        if not isinstance(section, dict):
+            continue
+
+        section_type = section.get("type")
+        if not isinstance(section_type, str) or section_type.strip().lower() != "skill":
+            continue
+
+        raw_items = section.get("items")
+        normalized_items: list[dict[str, str]] = []
+        seen: dict[str, int] = {}
+
+        if isinstance(raw_items, str):
+            for name in _split_skill_names(raw_items):
+                _append_skill_item(normalized_items, seen, name)
+        elif isinstance(raw_items, list):
+            for raw_item in raw_items:
+                if isinstance(raw_item, str):
+                    for name in _split_skill_names(raw_item):
+                        _append_skill_item(normalized_items, seen, name)
+                    continue
+
+                if not isinstance(raw_item, dict):
+                    continue
+
+                name = _clean_optional_text(
+                    raw_item.get("name")
+                    or raw_item.get("skill")
+                    or raw_item.get("technology")
+                    or raw_item.get("tool")
+                )
+                level = _clean_optional_text(raw_item.get("level") or raw_item.get("proficiency"))
+                if not name:
+                    continue
+
+                split_names = _split_skill_names(name)
+                if len(split_names) > 1 and not level:
+                    for split_name in split_names:
+                        _append_skill_item(normalized_items, seen, split_name)
+                    continue
+
+                _append_skill_item(normalized_items, seen, split_names[0] if split_names else name, level)
+
+        if normalized_items:
+            section["items"] = normalized_items
+
+
 def normalize_resume_profile_payload(raw_profile: object) -> object:
     if not isinstance(raw_profile, dict):
         return raw_profile
@@ -89,9 +261,13 @@ def normalize_resume_profile_payload(raw_profile: object) -> object:
     wrapped_profile = raw_profile.get("profile")
     if isinstance(wrapped_profile, dict):
         normalize_summary_section_items(wrapped_profile)
+        normalize_education_field_of_study(wrapped_profile)
+        normalize_skill_section_items(wrapped_profile)
         return wrapped_profile
 
     normalize_summary_section_items(raw_profile)
+    normalize_education_field_of_study(raw_profile)
+    normalize_skill_section_items(raw_profile)
     return raw_profile
 
 

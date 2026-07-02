@@ -38,12 +38,20 @@ Work experience:
 * achievements must be an array of strings.
 
 Education:
-* items must be an array of objects with degree, school, faculty, department, location, years, start, end, highlights.
+* items must be an array of objects with degree, fieldOfStudy, school, faculty, department, location, years, start, end, highlights.
+* Put only the credential or award name in degree, such as "Bachelor of Science", "Master of Computer Application", or "Diploma".
+* Put the major, specialization, discipline, or parenthesized study area in fieldOfStudy, such as "Computer Science", "Computers", "Finance", or "Mechanical Engineering".
+* Do not combine field of study into degree. For example, parse "Master of Computer Application (Computers)" as degree "Master of Computer Application" and fieldOfStudy "Computers".
 * highlights must be an array of strings.
 
 Skills:
 * items must be an array of objects with name and level.
 * If skill proficiency is not stated, use an empty string for level.
+* Extract explicit skills from the resume even when they appear in summary, experience bullets, projects, certifications, or a technical skills section.
+* Split comma-separated, semicolon-separated, line-separated, and bullet-separated skills into separate items.
+* Keep each skill name concise and specific. Use the exact resume wording for technologies, tools, programming languages, frameworks, methods, domains, and professional competencies.
+* Do not include category headings such as "Technical Skills", "Tools", "Languages", or "Core Competencies" as skill names.
+* Remove duplicate skills case-insensitively while preserving the clearest original spelling.
 
 Courses:
 * items must be an array of objects with course, institution, start, end.
@@ -118,6 +126,7 @@ OUTPUT JSON
         "items": [
           {
             "degree": "",
+            "fieldOfStudy": "",
             "school": "",
             "faculty": "",
             "department": "",

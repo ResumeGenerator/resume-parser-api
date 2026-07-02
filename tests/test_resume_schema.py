@@ -56,6 +56,68 @@ class ResumeSchemaTests(unittest.TestCase):
             ],
         )
 
+    def test_service_payload_normalizer_splits_education_field_of_study_from_degree(self) -> None:
+        payload = {
+            "data": {
+                "sections": [
+                    {
+                        "title": "Education",
+                        "type": "education",
+                        "items": [
+                            {
+                                "degree": "Master of Computer Application (Computers)",
+                                "school": "PSG College",
+                                "field_of_study": "",
+                            }
+                        ],
+                    }
+                ]
+            }
+        }
+
+        normalized = normalize_resume_profile_payload(payload)
+        education_item = normalized["data"]["sections"][0]["items"][0]
+        profile = ResumeProfile.model_validate(normalized)
+
+        self.assertEqual(education_item["degree"], "Master of Computer Application")
+        self.assertEqual(education_item["fieldOfStudy"], "Computers")
+        self.assertNotIn("field_of_study", education_item)
+        self.assertEqual(profile.data.sections[0].items[0].fieldOfStudy, "Computers")
+
+    def test_service_payload_normalizer_converts_skill_text_to_items(self) -> None:
+        payload = {
+            "data": {
+                "sections": [
+                    {
+                        "title": "Skills",
+                        "type": "skill",
+                        "items": [
+                            "Technical Skills: Python, FastAPI; Docker",
+                            "Cloud: AWS",
+                            {"skill": "MongoDB", "proficiency": "Advanced"},
+                            {"name": "python", "level": "Expert"},
+                        ],
+                    }
+                ]
+            }
+        }
+
+        normalized = normalize_resume_profile_payload(payload)
+        skill_items = normalized["data"]["sections"][0]["items"]
+        profile = ResumeProfile.model_validate(normalized)
+
+        self.assertEqual(
+            skill_items,
+            [
+                {"name": "Python", "level": "Expert"},
+                {"name": "FastAPI", "level": ""},
+                {"name": "Docker", "level": ""},
+                {"name": "AWS", "level": ""},
+                {"name": "MongoDB", "level": "Advanced"},
+            ],
+        )
+        self.assertEqual(profile.data.sections[0].items[0].name, "Python")
+
     def test_split_summary_items_uses_visible_delimiters(self) -> None:
         items = split_summary_items(
             "PROFILE SUMMARY\n"
@@ -139,6 +201,38 @@ class ResumeSchemaTests(unittest.TestCase):
         self.assertEqual(profile.data.email, "bijum777@gmail.com")
         self.assertEqual(profile.data.sections[0].items, payload["data"]["sections"][0]["items"])
         self.assertEqual(profile.data.sections[1].items[0].company, "Lexis Nexis")
+
+    def test_resume_profile_accepts_education_field_of_study(self) -> None:
+        profile = ResumeProfile.model_validate(
+            {
+                "data": {
+                    "sections": [
+                        {
+                            "title": "Education",
+                            "type": "education",
+                            "items": [
+                                {
+                                    "degree": "Bachelor of Science",
+                                    "fieldOfStudy": "Computer Science",
+                                    "school": "Example University",
+                                    "faculty": "",
+                                    "department": "",
+                                    "location": "",
+                                    "years": "2018",
+                                    "start": "",
+                                    "end": "",
+                                    "highlights": [],
+                                }
+                            ],
+                        }
+                    ]
+                }
+            }
+        )
+
+        education_item = profile.data.sections[0].items[0]
+        self.assertEqual(education_item.degree, "Bachelor of Science")
+        self.assertEqual(education_item.fieldOfStudy, "Computer Science")
 
     def test_work_experience_dates_normalize_to_day_month_year(self) -> None:
         profile = ResumeProfile.model_validate(

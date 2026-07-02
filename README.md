@@ -202,6 +202,24 @@ The endpoint is intended for work experience bullets and professional summary te
           ]
         },
         {
+          "title": "Education",
+          "type": "education",
+          "items": [
+            {
+              "degree": "Bachelor of Science",
+              "fieldOfStudy": "Computer Science",
+              "school": "Example University",
+              "faculty": "",
+              "department": "",
+              "location": "Austin, TX",
+              "years": "2016 - 2020",
+              "start": "",
+              "end": "",
+              "highlights": []
+            }
+          ]
+        },
+        {
           "title": "Skills",
           "type": "skill",
           "items": [
@@ -251,4 +269,5 @@ The returned JSON is intentionally shaped as parsed resume content for a downstr
 
 - `data.name`, `data.title`, `data.location`, `data.phone`, `data.email`, and `data.summary` populate the resume header and summary.
 - `data.sections` contains structured sections for summary, experience, education, skills, courses, languages, references, links, internships, and hobbies.
+- Education section items keep the credential in `degree` and the major, specialization, or discipline in `fieldOfStudy`.
 - Template, style, photo, and renderer settings should be selected outside the parser response.
