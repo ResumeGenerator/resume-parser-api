@@ -262,9 +262,9 @@ The same values are stored on the MongoDB resume document, and `GET /api/resumes
           "title": "Skills",
           "type": "skill",
           "items": [
-            { "name": "Python", "level": "" },
-            { "name": "FastAPI", "level": "" },
-            { "name": "Docker", "level": "" }
+            { "name": "Python", "aiGenerated": false },
+            { "name": "FastAPI", "aiGenerated": false },
+            { "name": "Docker", "aiGenerated": true }
           ]
         }
       ]
@@ -310,5 +310,6 @@ The returned JSON is intentionally shaped as parsed resume content for a downstr
 
 - `data.name`, `data.title`, `data.location`, `data.phone`, `data.email`, and `data.summary` populate the resume header and summary.
 - `data.sections` contains structured sections for summary, experience, education, skills, courses, languages, references, links, internships, and hobbies.
+- Skill section items use `aiGenerated: false` for skills extracted from the resume and `aiGenerated: true` for AI-suggested skills.
 - Education section items keep the credential in `degree` and the major, specialization, or discipline in `fieldOfStudy`.
 - Template, style, photo, and renderer settings should be selected outside the parser response.

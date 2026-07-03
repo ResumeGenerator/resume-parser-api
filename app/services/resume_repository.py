@@ -1,4 +1,5 @@
 import logging
+from copy import deepcopy
 from datetime import UTC, datetime
 from typing import Any
 
@@ -7,6 +8,7 @@ from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorCollection
 
 from app.core.config import Settings
 from app.models.resume_schema import ResumeProfile
+from app.services.resume_parser import normalize_resume_profile_payload
 
 logger = logging.getLogger(__name__)
 
@@ -211,6 +213,12 @@ class MongoResumeRepository:
             avatar = original.get("avatar")
         avatar = str(avatar or "")
 
+        profile = document.get("profile", {})
+        if isinstance(profile, dict):
+            normalized_profile = normalize_resume_profile_payload(deepcopy(profile))
+            if isinstance(normalized_profile, dict):
+                profile = normalized_profile
+
         return {
             "id": resume_id,
             "resumeId": resume_id,
@@ -218,7 +226,7 @@ class MongoResumeRepository:
             "status": document.get("status"),
             "avatar": avatar,
             "withPhoto": bool(document.get("withPhoto") or avatar),
-            "profile": document.get("profile", {}),
+            "profile": profile,
             "metadata": metadata or {},
         }
 

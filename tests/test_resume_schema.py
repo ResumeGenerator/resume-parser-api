@@ -99,8 +99,8 @@ class ResumeSchemaTests(unittest.TestCase):
                         "items": [
                             "Technical Skills: Python, FastAPI; Docker",
                             "Cloud: AWS",
-                            {"skill": "MongoDB", "proficiency": "Advanced"},
-                            {"name": "python", "level": "Expert"},
+                            {"skill": "MongoDB", "aiGenerated": True},
+                            {"name": "python", "suggested": True},
                         ],
                     }
                 ]
@@ -114,14 +114,35 @@ class ResumeSchemaTests(unittest.TestCase):
         self.assertEqual(
             skill_items,
             [
-                {"name": "Python", "level": "Expert"},
-                {"name": "FastAPI", "level": ""},
-                {"name": "Docker", "level": ""},
-                {"name": "AWS", "level": ""},
-                {"name": "MongoDB", "level": "Advanced"},
+                {"name": "Python", "aiGenerated": False},
+                {"name": "FastAPI", "aiGenerated": False},
+                {"name": "Docker", "aiGenerated": False},
+                {"name": "AWS", "aiGenerated": False},
+                {"name": "MongoDB", "aiGenerated": True},
             ],
         )
         self.assertEqual(profile.data.sections[0].items[0].name, "Python")
+        self.assertFalse(profile.data.sections[0].items[0].aiGenerated)
+
+    def test_resume_profile_converts_legacy_skill_level_to_ai_generated_default(self) -> None:
+        profile = ResumeProfile.model_validate(
+            {
+                "data": {
+                    "sections": [
+                        {
+                            "title": "Skills",
+                            "type": "skill",
+                            "items": [
+                                {"name": "Python", "level": "Expert"},
+                            ],
+                        }
+                    ]
+                }
+            }
+        )
+
+        skill_item = profile.data.sections[0].items[0]
+        self.assertEqual(skill_item.model_dump(mode="json"), {"name": "Python", "aiGenerated": False})
 
     def test_split_summary_items_uses_visible_delimiters(self) -> None:
         items = split_summary_items(
@@ -193,8 +214,8 @@ class ResumeSchemaTests(unittest.TestCase):
                         "title": "Skills",
                         "type": "skill",
                         "items": [
-                            {"name": "Development", "level": "Beginner"},
-                            {"name": "Cloud computing", "level": "Intermediate"},
+                            {"name": "Development", "aiGenerated": False},
+                            {"name": "Cloud computing", "aiGenerated": True},
                         ],
                     },
                 ],
@@ -446,6 +467,35 @@ class ResumeRephraseTests(unittest.IsolatedAsyncioTestCase):
 
 
 class MongoResumeRepositoryTests(unittest.IsolatedAsyncioTestCase):
+    def test_response_document_normalizes_legacy_skill_level(self) -> None:
+        resume_id = ObjectId()
+        document = {
+            "_id": resume_id,
+            "resumeId": str(resume_id),
+            "version": 1,
+            "status": "parsed",
+            "profile": {
+                "data": {
+                    "name": "Alex Morgan",
+                    "sections": [
+                        {
+                            "title": "Skills",
+                            "type": "skill",
+                            "items": [{"name": "Python", "level": "Expert"}],
+                        }
+                    ],
+                }
+            },
+            "metadata": {"filename": "alex.pdf"},
+        }
+
+        response_document = MongoResumeRepository._to_response_document(document)
+
+        self.assertEqual(
+            response_document["profile"]["data"]["sections"][0]["items"],
+            [{"name": "Python", "aiGenerated": False}],
+        )
+
     async def test_save_stores_parsed_resume_document(self) -> None:
         repository = MongoResumeRepository.__new__(MongoResumeRepository)
         repository.database_name = "resume_parser"
