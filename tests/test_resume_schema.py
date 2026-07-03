@@ -521,6 +521,7 @@ class MongoResumeRepositoryTests(unittest.IsolatedAsyncioTestCase):
             profile=profile,
             metadata={"filename": "alex.pdf"},
             job_description="Python backend engineer",
+            user_id="user-123",
         )
 
         self.assertTrue(ObjectId.is_valid(resume_id))
@@ -528,10 +529,62 @@ class MongoResumeRepositoryTests(unittest.IsolatedAsyncioTestCase):
         saved_document = repository.collection.insert_one.await_args.args[0]
         self.assertEqual(resume_id, str(saved_document["_id"]))
         self.assertEqual(saved_document["resumeId"], str(saved_document["_id"]))
+        self.assertEqual(saved_document["userId"], "user-123")
         self.assertEqual(saved_document["version"], 1)
         self.assertEqual(saved_document["status"], "parsed")
         self.assertEqual(saved_document["profile"]["data"]["name"], "Alex Morgan")
         self.assertEqual(saved_document["source"]["createdFrom"], "parse")
+
+    async def test_list_filters_parsed_resumes_by_user_id(self) -> None:
+        repository = MongoResumeRepository.__new__(MongoResumeRepository)
+        repository.collection = unittest.mock.Mock()
+
+        class FakeCursor:
+            def sort(self, *args: object, **kwargs: object) -> "FakeCursor":
+                return self
+
+            def skip(self, *args: object, **kwargs: object) -> "FakeCursor":
+                return self
+
+            def limit(self, *args: object, **kwargs: object) -> "FakeCursor":
+                return self
+
+            async def to_list(self, length: int) -> list[dict]:
+                return [
+                    {
+                        "_id": ObjectId(),
+                        "resumeId": "resume123",
+                        "userId": "user-123",
+                        "version": 1,
+                        "status": "parsed",
+                        "profile": {"data": {"name": "Alex Morgan", "sections": []}},
+                        "metadata": {"filename": "alex.pdf"},
+                    }
+                ]
+
+        repository.collection.find = unittest.mock.Mock(return_value=FakeCursor())
+
+        documents = await repository.list(limit=10, skip=5, user_id="user-123")
+
+        repository.collection.find.assert_called_once_with({"userId": "user-123"})
+        self.assertEqual(documents[0]["userId"], "user-123")
+
+    async def test_find_original_filters_by_user_id_when_provided(self) -> None:
+        repository = MongoResumeRepository.__new__(MongoResumeRepository)
+        repository.collection = unittest.mock.Mock()
+        repository.collection.find_one = AsyncMock(return_value=None)
+        resume_id = str(ObjectId())
+
+        await repository._find_original(resume_id, user_id="user-123")
+
+        repository.collection.find_one.assert_awaited_once_with(
+            {
+                "$and": [
+                    {"$or": [{"resumeId": resume_id}, {"_id": ObjectId(resume_id)}]},
+                    {"userId": "user-123"},
+                ]
+            }
+        )
 
     async def test_save_edited_upserts_single_record_per_resume(self) -> None:
         repository = MongoResumeRepository.__new__(MongoResumeRepository)
@@ -644,17 +697,74 @@ class MongoResumeRepositoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(response_document["withPhoto"])
 
 
-class ResumeImageEndpointTests(unittest.TestCase):
-    def test_upload_resume_image_saves_file_and_returns_avatar_url(self) -> None:
+class ResumeUserIdEndpointTests(unittest.TestCase):
+    def tearDown(self) -> None:
+        app.dependency_overrides.clear()
+
+    def test_parse_endpoint_forwards_user_id_to_repository(self) -> None:
+        class FakeLLMClient:
+            async def extract_resume_profile(self, resume_text: str, job_description: str | None) -> dict:
+                return {
+                    "data": {
+                        "name": "Alex Morgan",
+                        "email": "alex@example.com",
+                        "sections": [],
+                    }
+                }
+
         class FakeRepository:
             def __init__(self) -> None:
-                self.saved_image_url: str | None = None
-                self.saved_metadata: dict | None = None
+                self.saved_user_id: str | None = None
 
-            async def get(self, resume_id: str) -> dict:
+            async def save(
+                self,
+                profile: ResumeProfile,
+                metadata: dict,
+                job_description: str | None,
+                user_id: str | None = None,
+            ) -> str:
+                self.saved_user_id = user_id
+                return "resume123"
+
+        resume_text = (
+            "Alex Morgan\n"
+            "alex@example.com\n"
+            "+1 555 0100\n"
+            "Professional Summary\n"
+            "Backend engineer building APIs.\n"
+            "Work Experience\n"
+            "Software Engineer 2020 - Present\n"
+            "Education\n"
+            "Skills\n"
+            "Python, FastAPI\n"
+        )
+        fake_repository = FakeRepository()
+
+        with (
+            patch("app.api.routes_resume.get_llm_client", return_value=FakeLLMClient()),
+            patch("app.api.routes_resume.get_resume_repository", return_value=fake_repository),
+        ):
+            response = TestClient(app).post(
+                "/api/resumes/parse",
+                data={"userId": " user-123 "},
+                files={"file": ("resume.txt", resume_text.encode("utf-8"), "text/plain")},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(fake_repository.saved_user_id, "user-123")
+        self.assertEqual(response.json()["userId"], "user-123")
+
+    def test_get_endpoint_forwards_user_id_to_repository(self) -> None:
+        class FakeRepository:
+            def __init__(self) -> None:
+                self.requested_user_id: str | None = None
+
+            async def get(self, resume_id: str, user_id: str | None = None) -> dict:
+                self.requested_user_id = user_id
                 return {
                     "id": resume_id,
                     "resumeId": resume_id,
+                    "userId": user_id,
                     "version": 1,
                     "status": "parsed",
                     "profile": {"data": {"name": "Alex Morgan", "sections": []}},
@@ -663,12 +773,79 @@ class ResumeImageEndpointTests(unittest.TestCase):
                     "withPhoto": False,
                 }
 
-            async def save_image(self, resume_id: str, image_url: str, image_metadata: dict) -> dict:
+        fake_repository = FakeRepository()
+
+        with patch("app.api.routes_resume.get_resume_repository", return_value=fake_repository):
+            response = TestClient(app).get("/api/resumes/resume123?userId=user-123")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(fake_repository.requested_user_id, "user-123")
+        self.assertEqual(response.json()["userId"], "user-123")
+
+    def test_list_endpoint_forwards_user_id_to_repository(self) -> None:
+        class FakeRepository:
+            def __init__(self) -> None:
+                self.requested_user_id: str | None = None
+
+            async def list(self, limit: int, skip: int, user_id: str | None = None) -> list[dict]:
+                self.requested_user_id = user_id
+                return [
+                    {
+                        "id": "resume123",
+                        "resumeId": "resume123",
+                        "userId": user_id,
+                        "version": 1,
+                        "status": "parsed",
+                        "profile": {"data": {"name": "Alex Morgan", "sections": []}},
+                        "metadata": {"filename": "alex.pdf"},
+                        "avatar": "",
+                        "withPhoto": False,
+                    }
+                ]
+
+        fake_repository = FakeRepository()
+
+        with patch("app.api.routes_resume.get_resume_repository", return_value=fake_repository):
+            response = TestClient(app).get("/api/resumes?userId=user-123")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(fake_repository.requested_user_id, "user-123")
+        self.assertEqual(response.json()[0]["userId"], "user-123")
+
+
+class ResumeImageEndpointTests(unittest.TestCase):
+    def test_upload_resume_image_saves_file_and_returns_avatar_url(self) -> None:
+        class FakeRepository:
+            def __init__(self) -> None:
+                self.saved_image_url: str | None = None
+                self.saved_metadata: dict | None = None
+
+            async def get(self, resume_id: str, user_id: str | None = None) -> dict:
+                return {
+                    "id": resume_id,
+                    "resumeId": resume_id,
+                    "userId": user_id,
+                    "version": 1,
+                    "status": "parsed",
+                    "profile": {"data": {"name": "Alex Morgan", "sections": []}},
+                    "metadata": {"filename": "alex.pdf"},
+                    "avatar": "",
+                    "withPhoto": False,
+                }
+
+            async def save_image(
+                self,
+                resume_id: str,
+                image_url: str,
+                image_metadata: dict,
+                user_id: str | None = None,
+            ) -> dict:
                 self.saved_image_url = image_url
                 self.saved_metadata = image_metadata
                 return {
                     "id": resume_id,
                     "resumeId": resume_id,
+                    "userId": user_id,
                     "version": 1,
                     "status": "parsed",
                     "profile": {"data": {"name": "Alex Morgan", "sections": []}},

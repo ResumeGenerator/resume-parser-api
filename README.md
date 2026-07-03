@@ -8,6 +8,7 @@ FastAPI service for extracting structured resume data from uploaded PDF, DOCX, o
 - `POST /api/resumes/{resume_id}/image` uploads a resume photo and stores its URL
 - `POST /api/resumes/rephrase` accepts text and returns resume-ready rephrasing
 - `POST /api/resumes/{resume_id}/edits` saves a single edited profile record per parsed resume
+- Resume save and fetch endpoints accept optional `userId` ownership filtering
 - Supports `.pdf`, `.docx`, and `.txt`
 - Configurable max upload size through `MAX_FILE_SIZE_MB`
 - Text extraction with PyMuPDF and python-docx
@@ -129,8 +130,11 @@ If your Railway MongoDB service exposes `MONGODB_URI` or `MONGO_URL`, the app wi
 ```bash
 curl -X POST "http://localhost:8000/api/resumes/parse" \
   -F "file=@/path/to/resume.pdf" \
+  -F "userId=user-123" \
   -F "jobDescription=Senior Python Backend Engineer with FastAPI, cloud, Docker, and LLM integration experience."
 ```
+
+Use `userId` as a multipart field when parsing a resume. For fetch/update operations, pass it as a query parameter, for example `GET /api/resumes?userId=user-123`, `GET /api/resumes/{resume_id}?userId=user-123`, or `POST /api/resumes/{resume_id}/edits?userId=user-123`.
 
 ## Rephrase Resume Text
 
@@ -178,7 +182,7 @@ The endpoint is intended for work experience bullets and professional summary te
 Upload a JPEG, PNG, or WebP image for a saved resume:
 
 ```bash
-curl -X POST "http://localhost:8000/api/resumes/675f3b5e9c8a6a1d2f3a4b5c/image" \
+curl -X POST "http://localhost:8000/api/resumes/675f3b5e9c8a6a1d2f3a4b5c/image?userId=user-123" \
   -F "file=@/path/to/photo.png"
 ```
 
@@ -199,6 +203,7 @@ The same values are stored on the MongoDB resume document, and `GET /api/resumes
 {
   "id": "675f3b5e9c8a6a1d2f3a4b5c",
   "resumeId": "675f3b5e9c8a6a1d2f3a4b5c",
+  "userId": "user-123",
   "version": 1,
   "status": "parsed",
   "avatar": "",

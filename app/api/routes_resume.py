@@ -24,6 +24,14 @@ router = APIRouter(prefix="/api/resumes", tags=["resumes"])
 HTTP_422_UNPROCESSABLE_CONTENT = 422
 
 
+def normalize_user_id(user_id: str | None) -> str | None:
+    if user_id is None:
+        return None
+
+    normalized = user_id.strip()
+    return normalized or None
+
+
 def get_resume_image_storage(settings: Settings) -> ResumeImageStorage:
     backend = settings.resume_image_storage_backend.strip().lower()
     if backend == "local":
@@ -143,6 +151,7 @@ async def read_resume_profile_request(request: Request) -> ResumeProfile:
 async def parse_resume(
     file: UploadFile = File(...),
     jobDescription: str | None = Form(default=None),
+    userId: str | None = Form(default=None),
     settings: Settings = Depends(get_settings),
 ) -> ResumeParseResponse:
     content, extension = await read_and_validate_file(file, settings.max_file_size_bytes)
@@ -166,6 +175,7 @@ async def parse_resume(
 
     parser = ResumeParserService(llm_client)
     profile = await parser.parse(resume_text, jobDescription.strip() if jobDescription else None)
+    normalized_user_id = normalize_user_id(userId)
     metadata = {
         "filename": file.filename,
         "fileType": extension,
@@ -177,7 +187,12 @@ async def parse_resume(
 
     try:
         repository = get_resume_repository(settings)
-        resume_id = await repository.save(profile, metadata, jobDescription.strip() if jobDescription else None)
+        resume_id = await repository.save(
+            profile,
+            metadata,
+            jobDescription.strip() if jobDescription else None,
+            user_id=normalized_user_id,
+        )
     except ResumeRepositoryNotConfiguredError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -195,6 +210,7 @@ async def parse_resume(
         profile=profile,
         metadata=metadata,
         resumeId=resume_id,
+        userId=normalized_user_id,
         version=1,
         status="parsed",
     )
@@ -204,11 +220,12 @@ async def parse_resume(
 async def list_resumes(
     limit: int = Query(default=50, ge=1, le=500),
     skip: int = Query(default=0, ge=0),
+    userId: str | None = Query(default=None),
     settings: Settings = Depends(get_settings),
 ) -> list[ResumeParseResponse]:
     try:
         repository = get_resume_repository(settings)
-        return await repository.list(limit=limit, skip=skip)
+        return await repository.list(limit=limit, skip=skip, user_id=normalize_user_id(userId))
     except ResumeRepositoryNotConfiguredError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -235,11 +252,12 @@ async def get_resume_image(
 @router.get("/{resume_id}", response_model=ResumeParseResponse)
 async def get_resume(
     resume_id: str,
+    userId: str | None = Query(default=None),
     settings: Settings = Depends(get_settings),
 ) -> ResumeParseResponse:
     try:
         repository = get_resume_repository(settings)
-        document = await repository.get(resume_id)
+        document = await repository.get(resume_id, user_id=normalize_user_id(userId))
     except ResumeRepositoryNotConfiguredError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -265,12 +283,14 @@ async def get_resume(
 async def upload_resume_image(
     resume_id: str,
     request: Request,
+    userId: str | None = Query(default=None),
     file: UploadFile = File(...),
     settings: Settings = Depends(get_settings),
 ) -> ResumeParseResponse:
+    normalized_user_id = normalize_user_id(userId)
     try:
         repository = get_resume_repository(settings)
-        existing_document = await repository.get(resume_id)
+        existing_document = await repository.get(resume_id, user_id=normalized_user_id)
     except ResumeRepositoryNotConfiguredError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -303,7 +323,7 @@ async def upload_resume_image(
     }
 
     try:
-        return await repository.save_image(resume_id, image_url, image_metadata)
+        return await repository.save_image(resume_id, image_url, image_metadata, user_id=normalized_user_id)
     except ResumeNotFoundError as exc:
         await cleanup_stored_resume_image(storage, stored_image)
         raise HTTPException(
@@ -323,13 +343,14 @@ async def upload_resume_image(
 async def save_edited_resume(
     resume_id: str,
     request: Request,
+    userId: str | None = Query(default=None),
     settings: Settings = Depends(get_settings),
 ) -> ResumeParseResponse:
     profile = await read_resume_profile_request(request)
 
     try:
         repository = get_resume_repository(settings)
-        return await repository.save_edited(resume_id, profile)
+        return await repository.save_edited(resume_id, profile, user_id=normalize_user_id(userId))
     except ResumeNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

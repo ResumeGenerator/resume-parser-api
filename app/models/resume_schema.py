@@ -408,6 +408,7 @@ class ResumeParseResponse(StrictBaseModel):
     profile: ResumeProfile
     metadata: dict[str, Any]
     resumeId: str | None = None
+    userId: str | None = None
     version: int | None = None
     status: str | None = None
     avatar: str = ""
