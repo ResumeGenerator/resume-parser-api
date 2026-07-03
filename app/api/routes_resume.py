@@ -3,6 +3,7 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
+from fastapi.responses import Response
 from pydantic import ValidationError
 
 from app.core.config import Settings, get_settings
@@ -10,6 +11,7 @@ from app.core.database import get_resume_repository
 from app.core.llm_client import get_llm_client
 from app.models.resume_schema import ResumeParseResponse, ResumeProfile, ResumeRephraseRequest, ResumeRephraseResponse
 from app.services.document_text_extractor import DocumentTextExtractor
+from app.services.resume_image_storage import LocalResumeImageStorage, ResumeImageStorage, S3ResumeImageStorage
 from app.services.resume_parser import ResumeParserService, normalize_resume_profile_payload
 from app.services.resume_rephraser import ResumeRephraseService
 from app.services.resume_repository import ResumeNotFoundError, ResumeRepositoryNotConfiguredError
@@ -20,6 +22,53 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/resumes", tags=["resumes"])
 HTTP_422_UNPROCESSABLE_CONTENT = 422
+
+
+def get_resume_image_storage(settings: Settings) -> ResumeImageStorage:
+    backend = settings.resume_image_storage_backend.strip().lower()
+    if backend == "local":
+        return LocalResumeImageStorage(settings.resume_image_storage_dir)
+
+    if backend == "s3":
+        required_values = {
+            "S3_ENDPOINT_URL": settings.resume_image_s3_endpoint_url,
+            "S3_BUCKET_NAME": settings.resume_image_s3_bucket_name,
+            "S3_ACCESS_KEY_ID": settings.resume_image_s3_access_key_id,
+            "S3_SECRET_ACCESS_KEY": settings.resume_image_s3_secret_access_key,
+        }
+        missing = [name for name, value in required_values.items() if not value]
+        if missing:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"S3 resume image storage is missing required variables: {', '.join(missing)}.",
+            )
+
+        try:
+            return S3ResumeImageStorage(
+                endpoint_url=settings.resume_image_s3_endpoint_url or "",
+                region_name=settings.resume_image_s3_region,
+                bucket_name=settings.resume_image_s3_bucket_name or "",
+                access_key_id=settings.resume_image_s3_access_key_id or "",
+                secret_access_key=settings.resume_image_s3_secret_access_key or "",
+                key_prefix=settings.resume_image_s3_key_prefix,
+            )
+        except RuntimeError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=str(exc),
+            ) from exc
+
+    raise HTTPException(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail="RESUME_IMAGE_STORAGE_BACKEND must be either 'local' or 's3'.",
+    )
+
+
+async def cleanup_stored_resume_image(storage: ResumeImageStorage, image: Any) -> None:
+    try:
+        await storage.delete(image)
+    except Exception:
+        logger.warning("Failed to clean up uploaded resume image after a later error.", exc_info=True)
 
 
 async def read_rephrase_request(request: Request) -> ResumeRephraseRequest:
@@ -173,6 +222,16 @@ async def list_resumes(
         ) from exc
 
 
+@router.get("/images/{filename}", name="get_resume_image")
+async def get_resume_image(
+    filename: str,
+    settings: Settings = Depends(get_settings),
+) -> Response:
+    storage = get_resume_image_storage(settings)
+    image = await storage.read_public_image(filename)
+    return Response(content=image.content, media_type=image.content_type)
+
+
 @router.get("/{resume_id}", response_model=ResumeParseResponse)
 async def get_resume(
     resume_id: str,
@@ -200,6 +259,64 @@ async def get_resume(
         )
 
     return document
+
+
+@router.post("/{resume_id}/image", response_model=ResumeParseResponse)
+async def upload_resume_image(
+    resume_id: str,
+    request: Request,
+    file: UploadFile = File(...),
+    settings: Settings = Depends(get_settings),
+) -> ResumeParseResponse:
+    try:
+        repository = get_resume_repository(settings)
+        existing_document = await repository.get(resume_id)
+    except ResumeRepositoryNotConfiguredError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        logger.exception("Failed to fetch resume before uploading image.")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="MongoDB is configured but failed to fetch the resume.",
+        ) from exc
+
+    if existing_document is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Resume was not found.",
+        )
+
+    storage = get_resume_image_storage(settings)
+    stored_image = await storage.save_upload(resume_id, file, settings.resume_image_max_size_bytes)
+    image_url = str(request.url_for("get_resume_image", filename=stored_image.filename))
+    image_metadata = {
+        "url": image_url,
+        "filename": stored_image.filename,
+        "objectKey": stored_image.key,
+        "storageBackend": stored_image.backend,
+        "originalFilename": file.filename,
+        "contentType": stored_image.content_type,
+        "sizeBytes": stored_image.size_bytes,
+    }
+
+    try:
+        return await repository.save_image(resume_id, image_url, image_metadata)
+    except ResumeNotFoundError as exc:
+        await cleanup_stored_resume_image(storage, stored_image)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        await cleanup_stored_resume_image(storage, stored_image)
+        logger.exception("Failed to save resume image URL to MongoDB.")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="MongoDB is configured but failed to save the resume image URL.",
+        ) from exc
 
 
 @router.post("/{resume_id}/edits", response_model=ResumeParseResponse)

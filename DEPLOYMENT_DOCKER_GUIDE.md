@@ -57,6 +57,12 @@ docker run -p 8000:8000 \
   -e OPENAI_API_KEY=sk-... \
   -e MONGO_URI=mongodb://mongo:27017 \
   -e MONGO_EDITED_COLLECTION=edited_resumes \
+  -e RESUME_IMAGE_STORAGE_BACKEND=s3 \
+  -e S3_ENDPOINT_URL=https://t3.storageapi.dev \
+  -e S3_REGION=auto \
+  -e S3_BUCKET_NAME=recorded-bottle-uayuz3vz5 \
+  -e S3_ACCESS_KEY_ID=... \
+  -e S3_SECRET_ACCESS_KEY=... \
   resume-parser-ocr:latest
 
 # Or use docker-compose (see below)
@@ -77,6 +83,12 @@ services:
     environment:
       APP_NAME: Resume Parser Service
       MAX_FILE_SIZE_MB: 5
+      RESUME_IMAGE_STORAGE_BACKEND: s3
+      S3_ENDPOINT_URL: https://t3.storageapi.dev
+      S3_REGION: auto
+      S3_BUCKET_NAME: ${S3_BUCKET_NAME}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
       CORS_ORIGINS: "http://localhost:4200,http://127.0.0.1:4200,http://localhost:4300,http://127.0.0.1:4300"
       
       # LLM Configuration

@@ -20,9 +20,16 @@ Your resume parser API now has **automatic OCR fallback support** for scanned/im
    OCR_MODEL=gpt-4.1-mini
    OCR_MAX_PAGES=5
    OCR_DPI=200
+   RESUME_IMAGE_STORAGE_BACKEND=s3
+   S3_ENDPOINT_URL=https://t3.storageapi.dev
+   S3_REGION=auto
+   S3_BUCKET_NAME=recorded-bottle-uayuz3vz5
+   S3_ACCESS_KEY_ID=...
+   S3_SECRET_ACCESS_KEY=...
    ```
 
    Resume parsing, rephrasing, and OCR fallback all use OpenAI, so `OPENAI_API_KEY` is required for normal operation.
+   Resume image uploads are saved to the configured Railway S3-compatible bucket.
 
 ## How It Works
 
@@ -180,6 +187,12 @@ docker run -p 8000:8000 \
   -e OCR_FALLBACK_ENABLED=true \
   -e OPENAI_API_KEY=sk-... \
   -e MONGO_EDITED_COLLECTION=edited_resumes \
+  -e RESUME_IMAGE_STORAGE_BACKEND=s3 \
+  -e S3_ENDPOINT_URL=https://t3.storageapi.dev \
+  -e S3_REGION=auto \
+  -e S3_BUCKET_NAME=recorded-bottle-uayuz3vz5 \
+  -e S3_ACCESS_KEY_ID=... \
+  -e S3_SECRET_ACCESS_KEY=... \
   resume-parser:ocr
 ```
 

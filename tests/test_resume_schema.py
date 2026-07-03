@@ -1,15 +1,20 @@
+from io import BytesIO
+from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import AsyncMock, patch
 
 from bson import ObjectId
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
+from PIL import Image
 from pydantic import ValidationError
 
 from app.main import app
-from app.core.config import Settings
+from app.api.routes_resume import get_resume_image_storage
+from app.core.config import Settings, get_settings
 from app.core.llm_client import OpenAIClient, get_llm_client
 from app.models.resume_schema import ResumeProfile, ResumeRephraseRequest
+from app.services.resume_image_storage import LocalResumeImageStorage
 from app.services.resume_rephraser import ResumeRephraseService
 from app.services.resume_parser import normalize_resume_profile_payload, split_summary_items
 from app.services.resume_repository import MongoResumeRepository
@@ -533,12 +538,147 @@ class MongoResumeRepositoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(repository.edited_collection.update_one.await_args.kwargs["upsert"])
         self.assertEqual(update_document["$set"]["version"], 1)
         self.assertEqual(update_document["$set"]["status"], "edited")
+        self.assertEqual(update_document["$set"]["avatar"], "")
+        self.assertFalse(update_document["$set"]["withPhoto"])
         self.assertEqual(saved_document["id"], str(original_id))
         self.assertEqual(saved_document["resumeId"], str(original_id))
         self.assertEqual(saved_document["version"], 1)
         self.assertEqual(saved_document["status"], "edited")
         self.assertEqual(saved_document["metadata"], {"filename": "alex.pdf"})
         self.assertEqual(saved_document["profile"]["data"]["title"], "Principal Engineer")
+
+    async def test_save_image_updates_original_and_edited_resume_documents(self) -> None:
+        repository = MongoResumeRepository.__new__(MongoResumeRepository)
+        repository.database_name = "resume_parser"
+        repository.collection = unittest.mock.Mock()
+        repository.edited_collection = unittest.mock.Mock()
+
+        original_id = ObjectId()
+        resume_id = str(original_id)
+        original_document = {
+            "_id": original_id,
+            "resumeId": resume_id,
+            "version": 1,
+            "status": "parsed",
+            "profile": {"data": {"name": "Alex Morgan", "sections": []}},
+            "metadata": {"filename": "alex.pdf"},
+        }
+        updated_document = {
+            **original_document,
+            "avatar": "https://api.example.com/api/resumes/images/avatar.png",
+            "withPhoto": True,
+            "image": {"filename": "avatar.png"},
+        }
+
+        repository.collection.find_one = AsyncMock(side_effect=[original_document, updated_document])
+        repository.collection.update_one = AsyncMock(return_value=unittest.mock.Mock(modified_count=1))
+        repository.edited_collection.update_one = AsyncMock(return_value=unittest.mock.Mock(modified_count=0))
+        repository.edited_collection.find_one = AsyncMock(return_value=None)
+
+        response_document = await repository.save_image(
+            resume_id,
+            "https://api.example.com/api/resumes/images/avatar.png",
+            {"filename": "avatar.png"},
+        )
+
+        repository.collection.update_one.assert_awaited_once()
+        collection_filter, collection_update = repository.collection.update_one.await_args.args
+        self.assertEqual(collection_filter, {"_id": original_id})
+        self.assertEqual(collection_update["$set"]["avatar"], "https://api.example.com/api/resumes/images/avatar.png")
+        self.assertTrue(collection_update["$set"]["withPhoto"])
+        repository.edited_collection.update_one.assert_awaited_once_with(
+            {"resumeId": resume_id},
+            {"$set": collection_update["$set"]},
+        )
+        self.assertEqual(response_document["avatar"], "https://api.example.com/api/resumes/images/avatar.png")
+        self.assertTrue(response_document["withPhoto"])
+
+
+class ResumeImageEndpointTests(unittest.TestCase):
+    def test_upload_resume_image_saves_file_and_returns_avatar_url(self) -> None:
+        class FakeRepository:
+            def __init__(self) -> None:
+                self.saved_image_url: str | None = None
+                self.saved_metadata: dict | None = None
+
+            async def get(self, resume_id: str) -> dict:
+                return {
+                    "id": resume_id,
+                    "resumeId": resume_id,
+                    "version": 1,
+                    "status": "parsed",
+                    "profile": {"data": {"name": "Alex Morgan", "sections": []}},
+                    "metadata": {"filename": "alex.pdf"},
+                    "avatar": "",
+                    "withPhoto": False,
+                }
+
+            async def save_image(self, resume_id: str, image_url: str, image_metadata: dict) -> dict:
+                self.saved_image_url = image_url
+                self.saved_metadata = image_metadata
+                return {
+                    "id": resume_id,
+                    "resumeId": resume_id,
+                    "version": 1,
+                    "status": "parsed",
+                    "profile": {"data": {"name": "Alex Morgan", "sections": []}},
+                    "metadata": {"filename": "alex.pdf"},
+                    "avatar": image_url,
+                    "withPhoto": True,
+                }
+
+        image = BytesIO()
+        Image.new("RGB", (1, 1), color="white").save(image, format="PNG")
+        fake_repository = FakeRepository()
+
+        with TemporaryDirectory() as temp_dir:
+            settings = Settings(
+                MONGO_URI="mongodb://example",
+                RESUME_IMAGE_STORAGE_DIR=temp_dir,
+            )
+            app.dependency_overrides[get_settings] = lambda: settings
+            try:
+                with patch("app.api.routes_resume.get_resume_repository", return_value=fake_repository):
+                    response = TestClient(app).post(
+                        "/api/resumes/resume123/image",
+                        files={"file": ("avatar.png", image.getvalue(), "image/png")},
+                    )
+            finally:
+                app.dependency_overrides.clear()
+
+            self.assertEqual(response.status_code, 200)
+            payload = response.json()
+            self.assertTrue(payload["withPhoto"])
+            self.assertTrue(payload["avatar"].startswith("http://testserver/api/resumes/images/resume123-"))
+            self.assertIsNotNone(fake_repository.saved_metadata)
+            saved_filename = fake_repository.saved_metadata["filename"]
+            self.assertEqual(fake_repository.saved_metadata["objectKey"], saved_filename)
+            self.assertEqual(fake_repository.saved_metadata["storageBackend"], "local")
+            self.assertEqual(fake_repository.saved_metadata["contentType"], "image/png")
+            self.assertTrue((LocalResumeImageStorage(temp_dir).storage_dir / saved_filename).is_file())
+
+    def test_s3_storage_factory_uses_railway_credentials(self) -> None:
+        settings = Settings(
+            RESUME_IMAGE_STORAGE_BACKEND="s3",
+            S3_ENDPOINT_URL="https://t3.storageapi.dev",
+            S3_REGION="auto",
+            S3_BUCKET_NAME="recorded-bottle-uayuz3vz5",
+            S3_ACCESS_KEY_ID="access-key",
+            S3_SECRET_ACCESS_KEY="secret-key",
+        )
+
+        with patch("app.api.routes_resume.S3ResumeImageStorage") as storage_class:
+            storage = get_resume_image_storage(settings)
+
+        self.assertEqual(storage, storage_class.return_value)
+        storage_class.assert_called_once_with(
+            endpoint_url="https://t3.storageapi.dev",
+            region_name="auto",
+            bucket_name="recorded-bottle-uayuz3vz5",
+            access_key_id="access-key",
+            secret_access_key="secret-key",
+            key_prefix="resume-images",
+        )
 
 
 class LLMClientTests(unittest.IsolatedAsyncioTestCase):

@@ -59,6 +59,8 @@ class MongoResumeRepository:
             "resumeId": resume_id,
             "version": 1,
             "status": "parsed",
+            "avatar": "",
+            "withPhoto": False,
             "profile": profile.model_dump(mode="json"),
             "metadata": metadata,
             "source": {
@@ -104,6 +106,8 @@ class MongoResumeRepository:
         now = datetime.now(UTC)
         metadata = original.get("metadata") or {}
         source = original.get("source") or {}
+        avatar = original.get("avatar") or ""
+        with_photo = bool(original.get("withPhoto") or avatar)
 
         await self.edited_collection.update_one(
             {"resumeId": stable_resume_id},
@@ -112,6 +116,8 @@ class MongoResumeRepository:
                     "resumeId": stable_resume_id,
                     "version": 1,
                     "status": "edited",
+                    "avatar": avatar,
+                    "withPhoto": with_photo,
                     "profile": profile.model_dump(mode="json"),
                     "metadata": metadata,
                     "source": {
@@ -141,6 +147,39 @@ class MongoResumeRepository:
         )
         return self._to_response_document(edited, original=original, stable_resume_id=stable_resume_id)
 
+    async def save_image(
+        self,
+        resume_id: str,
+        image_url: str,
+        image_metadata: dict[str, Any],
+    ) -> dict[str, Any]:
+        original = await self._find_original(resume_id)
+        if original is None:
+            raise ResumeNotFoundError(f"Resume {resume_id!r} was not found.")
+
+        stable_resume_id = self._stable_resume_id(original)
+        now = datetime.now(UTC)
+        image_update = {
+            "avatar": image_url,
+            "withPhoto": True,
+            "image": image_metadata,
+            "updatedAt": now,
+        }
+
+        await self.collection.update_one({"_id": original["_id"]}, {"$set": image_update})
+        await self.edited_collection.update_one({"resumeId": stable_resume_id}, {"$set": image_update})
+
+        updated = await self.get(stable_resume_id)
+        if updated is None:
+            raise RuntimeError("Resume image was saved but the resume document could not be read.")
+
+        logger.info(
+            "Saved resume image URL to MongoDB database=%r resume_id=%s",
+            self.database_name,
+            stable_resume_id,
+        )
+        return updated
+
     async def _find_original(self, resume_id: str) -> dict[str, Any] | None:
         filters: list[dict[str, Any]] = [{"resumeId": resume_id}]
         if ObjectId.is_valid(resume_id):
@@ -167,12 +206,18 @@ class MongoResumeRepository:
         metadata = document.get("metadata")
         if metadata is None and original is not None:
             metadata = original.get("metadata")
+        avatar = document.get("avatar")
+        if avatar is None and original is not None:
+            avatar = original.get("avatar")
+        avatar = str(avatar or "")
 
         return {
             "id": resume_id,
             "resumeId": resume_id,
             "version": document.get("version"),
             "status": document.get("status"),
+            "avatar": avatar,
+            "withPhoto": bool(document.get("withPhoto") or avatar),
             "profile": document.get("profile", {}),
             "metadata": metadata or {},
         }

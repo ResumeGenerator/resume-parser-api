@@ -5,6 +5,7 @@ FastAPI service for extracting structured resume data from uploaded PDF, DOCX, o
 ## Features
 
 - `POST /api/resumes/parse` accepts `multipart/form-data`
+- `POST /api/resumes/{resume_id}/image` uploads a resume photo and stores its URL
 - `POST /api/resumes/rephrase` accepts text and returns resume-ready rephrasing
 - `POST /api/resumes/{resume_id}/edits` saves a single edited profile record per parsed resume
 - Supports `.pdf`, `.docx`, and `.txt`
@@ -77,6 +78,15 @@ docker run --env-file .env -p 8000:8000 resume-parser-service
 | --- | --- |
 | `APP_NAME` | FastAPI app name |
 | `MAX_FILE_SIZE_MB` | Maximum upload size in MB |
+| `RESUME_IMAGE_MAX_SIZE_MB` | Maximum resume image upload size in MB |
+| `RESUME_IMAGE_STORAGE_BACKEND` | `s3` for Railway bucket storage, or `local` for local filesystem storage |
+| `S3_ENDPOINT_URL` | Railway S3-compatible endpoint URL |
+| `S3_REGION` | Railway S3-compatible region, usually `auto` |
+| `S3_BUCKET_NAME` | Railway bucket name |
+| `S3_ACCESS_KEY_ID` | Railway bucket access key ID |
+| `S3_SECRET_ACCESS_KEY` | Railway bucket secret access key |
+| `RESUME_IMAGE_S3_KEY_PREFIX` | Optional S3 object prefix, default `resume-images` |
+| `RESUME_IMAGE_STORAGE_DIR` | Local storage directory when `RESUME_IMAGE_STORAGE_BACKEND=local` |
 | `CORS_ORIGINS` | Comma-separated allowed frontend origins |
 | `LLM_PROVIDER` | `openai` |
 | `OPENAI_API_KEY` | OpenAI API key |
@@ -97,6 +107,13 @@ MONGO_URI=...
 MONGO_DATABASE=resume_parser
 MONGO_COLLECTION=parsed_resumes
 MONGO_EDITED_COLLECTION=edited_resumes
+RESUME_IMAGE_STORAGE_BACKEND=s3
+S3_ENDPOINT_URL=https://t3.storageapi.dev
+S3_REGION=auto
+S3_BUCKET_NAME=recorded-bottle-uayuz3vz5
+S3_ACCESS_KEY_ID=...
+S3_SECRET_ACCESS_KEY=...
+RESUME_IMAGE_S3_KEY_PREFIX=resume-images
 ```
 
 The Dockerfile uses Railway's `PORT` environment variable automatically:
@@ -105,7 +122,7 @@ The Dockerfile uses Railway's `PORT` environment variable automatically:
 uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
 ```
 
-If your Railway MongoDB service exposes `MONGODB_URI` or `MONGO_URL`, the app will accept those too.
+If your Railway MongoDB service exposes `MONGODB_URI` or `MONGO_URL`, the app will accept those too. For the Railway bucket shown in the service credentials tab, use the S3-compatible credential values for the `S3_*` variables.
 
 ## Example Request
 
@@ -156,6 +173,26 @@ Response:
 
 The endpoint is intended for work experience bullets and professional summary text. It uses the separate `app/core/rephrase_prompt.py` prompt and validates the OpenAI JSON response before returning it.
 
+## Upload Resume Image
+
+Upload a JPEG, PNG, or WebP image for a saved resume:
+
+```bash
+curl -X POST "http://localhost:8000/api/resumes/675f3b5e9c8a6a1d2f3a4b5c/image" \
+  -F "file=@/path/to/photo.png"
+```
+
+The file is saved to the configured storage backend. With `RESUME_IMAGE_STORAGE_BACKEND=s3`, it is uploaded to the Railway S3-compatible bucket, and the returned resume includes:
+
+```json
+{
+  "avatar": "http://localhost:8000/api/resumes/images/675f3b5e9c8a6a1d2f3a4b5c-abc123.png",
+  "withPhoto": true
+}
+```
+
+The same values are stored on the MongoDB resume document, and `GET /api/resumes/{resume_id}` returns them. The avatar URL points to the API image endpoint, which reads the object back from Railway storage.
+
 ## Example Response
 
 ```json
@@ -164,6 +201,8 @@ The endpoint is intended for work experience bullets and professional summary te
   "resumeId": "675f3b5e9c8a6a1d2f3a4b5c",
   "version": 1,
   "status": "parsed",
+  "avatar": "",
+  "withPhoto": false,
   "profile": {
     "data": {
       "name": "Alex Morgan",
@@ -253,6 +292,8 @@ Stored MongoDB documents use this shape:
   "resumeId": "675f3b5e9c8a6a1d2f3a4b5c",
   "version": 1,
   "status": "parsed",
+  "avatar": "",
+  "withPhoto": false,
   "profile": {},
   "metadata": {},
   "source": {

@@ -341,6 +341,8 @@ class ResumeParseResponse(StrictBaseModel):
     resumeId: str | None = None
     version: int | None = None
     status: str | None = None
+    avatar: str = ""
+    withPhoto: bool = False
 
 
 class ResumeRephraseRequest(StrictBaseModel):
