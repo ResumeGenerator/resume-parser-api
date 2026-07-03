@@ -7,6 +7,7 @@ from typing import Protocol
 from uuid import uuid4
 
 from fastapi import HTTPException, UploadFile, status
+import logging
 from PIL import Image, UnidentifiedImageError
 from starlette.concurrency import run_in_threadpool
 
@@ -110,14 +111,18 @@ class S3ResumeImageStorage:
 
         self.bucket_name = bucket_name
         self.key_prefix = key_prefix.strip("/")
-        self.client = boto3.client(
-            "s3",
-            endpoint_url=endpoint_url,
-            region_name=region_name,
-            aws_access_key_id=access_key_id,
-            aws_secret_access_key=secret_access_key,
-            config=Config(signature_version="s3v4"),
-        )
+        try:
+            self.client = boto3.client(
+                "s3",
+                endpoint_url=endpoint_url,
+                region_name=region_name,
+                aws_access_key_id=access_key_id,
+                aws_secret_access_key=secret_access_key,
+                config=Config(signature_version="s3v4"),
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            logging.getLogger(__name__).exception("Failed to construct S3 client.")
+            raise RuntimeError("Failed to initialize S3 client for resume image storage.") from exc
 
     async def save_upload(self, resume_id: str, upload: UploadFile, max_size_bytes: int) -> StoredResumeImage:
         content = await read_image_upload(upload, max_size_bytes)
@@ -125,13 +130,20 @@ class S3ResumeImageStorage:
         filename = build_image_filename(resume_id, extension)
         key = self._object_key(filename)
 
-        await run_in_threadpool(
-            self.client.put_object,
-            Bucket=self.bucket_name,
-            Key=key,
-            Body=content,
-            ContentType=content_type,
-        )
+        try:
+            await run_in_threadpool(
+                self.client.put_object,
+                Bucket=self.bucket_name,
+                Key=key,
+                Body=content,
+                ContentType=content_type,
+            )
+        except Exception as exc:  # pragma: no cover - integration error
+            logging.getLogger(__name__).exception("S3 put_object failed for bucket=%s key=%s", self.bucket_name, key)
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Failed to upload resume image to S3 storage.",
+            ) from exc
 
         return StoredResumeImage(
             filename=filename,
@@ -146,7 +158,8 @@ class S3ResumeImageStorage:
         key = self._object_key(filename)
         try:
             response = await run_in_threadpool(self.client.get_object, Bucket=self.bucket_name, Key=key)
-        except Exception as exc:
+        except Exception as exc:  # pragma: no cover - integration error
+            logging.getLogger(__name__).exception("S3 get_object failed for bucket=%s key=%s", self.bucket_name, key)
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Resume image was not found.",
