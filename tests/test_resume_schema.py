@@ -1038,6 +1038,100 @@ class ResumeImageEndpointTests(unittest.TestCase):
         self.assertEqual(payload["avatar"], fake_repository.saved_image_url)
         self.assertNotIn("image", payload)
 
+    def test_upload_resume_image_sanitizes_legacy_pre_upload_resume_for_response(self) -> None:
+        class FakeRepository:
+            def __init__(self) -> None:
+                self.saved_image_url: str | None = None
+
+            async def get(self, resume_id: str, user_id: str | None = None) -> dict:
+                return {
+                    "id": resume_id,
+                    "resumeId": resume_id,
+                    "userId": user_id,
+                    "version": 1,
+                    "status": "parsed",
+                    "profile": {
+                        "data": {
+                            "name": "Alex Morgan",
+                            "sections": [
+                                {
+                                    "title": "Skills",
+                                    "type": "skills",
+                                    "items": [
+                                        {"name": "Python", "id": "skill-1", "level": "Expert"},
+                                        {"skill": "FastAPI", "source": "resume"},
+                                    ],
+                                    "collapsed": False,
+                                },
+                                {
+                                    "title": "Work experience",
+                                    "type": "experience",
+                                    "items": [
+                                        {
+                                            "position": "Engineer",
+                                            "company": "Example Co",
+                                            "location": "Doha",
+                                            "jobType": "",
+                                            "reasonForLeaving": "",
+                                            "start": "2024",
+                                            "end": "Present",
+                                            "achievements": ["Built APIs"],
+                                            "id": "exp-1",
+                                        }
+                                    ],
+                                },
+                            ],
+                            "template": "nested-legacy-template",
+                        },
+                        "template": "legacy-template",
+                        "withPhoto": False,
+                    },
+                    "metadata": {"filename": "alex.pdf"},
+                    "avatar": "",
+                    "withPhoto": False,
+                    "image": {"filename": "old.png"},
+                }
+
+            async def save_image(
+                self,
+                resume_id: str,
+                image_url: str,
+                image_metadata: dict,
+                user_id: str | None = None,
+            ) -> dict:
+                self.saved_image_url = image_url
+                return {}
+
+        image = BytesIO()
+        Image.new("RGB", (1, 1), color="white").save(image, format="PNG")
+        fake_repository = FakeRepository()
+
+        with TemporaryDirectory() as temp_dir:
+            settings = Settings(MONGO_URI="mongodb://example", RESUME_IMAGE_STORAGE_DIR=temp_dir)
+            app.dependency_overrides[get_settings] = lambda: settings
+            try:
+                with patch("app.api.routes_resume.get_resume_repository", return_value=fake_repository):
+                    response = TestClient(app).post(
+                        "/api/resumes/resume123/image",
+                        files={"file": ("avatar.png", image.getvalue(), "image/png")},
+                    )
+            finally:
+                app.dependency_overrides.clear()
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["profile"]["data"]["name"], "Alex Morgan")
+        self.assertEqual(
+            payload["profile"]["data"]["sections"][0]["items"],
+            [
+                {"name": "Python", "aiGenerated": False},
+                {"name": "FastAPI", "aiGenerated": False},
+            ],
+        )
+        self.assertEqual(payload["profile"]["data"]["sections"][1]["items"][0]["position"], "Engineer")
+        self.assertNotIn("image", payload)
+        self.assertEqual(payload["avatar"], fake_repository.saved_image_url)
+
     def test_upload_resume_image_returns_503_when_storage_save_fails(self) -> None:
         class FakeRepository:
             async def get(self, resume_id: str, user_id: str | None = None) -> dict:

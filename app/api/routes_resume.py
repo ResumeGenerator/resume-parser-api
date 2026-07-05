@@ -1,5 +1,6 @@
 import json
 import logging
+from copy import deepcopy
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
@@ -22,6 +23,45 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/resumes", tags=["resumes"])
 HTTP_422_UNPROCESSABLE_CONTENT = 422
+RESUME_DATA_TEXT_FIELDS = (
+    "name",
+    "title",
+    "location",
+    "phone",
+    "email",
+    "summary",
+    "dateOfBirth",
+    "gender",
+    "nationality",
+    "documentDate",
+    "address",
+    "postalCode",
+)
+SECTION_TYPE_ALIASES = {
+    "courses": "course",
+    "educations": "education",
+    "internships": "internship",
+    "languages": "language",
+    "links": "link",
+    "references": "reference",
+    "skills": "skill",
+    "work experience": "experience",
+    "work_experience": "experience",
+}
+SECTION_ITEM_TEXT_FIELDS = {
+    "course": ("course", "institution", "start", "end"),
+    "education": ("degree", "fieldOfStudy", "school", "faculty", "department", "location", "years", "start", "end"),
+    "experience": ("position", "company", "location", "jobType", "reasonForLeaving", "start", "end"),
+    "internship": ("position", "company", "location", "start", "end"),
+    "language": ("language", "level"),
+    "link": ("label", "link"),
+    "reference": ("name", "company", "email", "phone"),
+}
+SECTION_ITEM_LIST_FIELDS = {
+    "education": ("highlights",),
+    "experience": ("achievements",),
+    "internship": ("achievements",),
+}
 
 
 def normalize_user_id(user_id: str | None) -> str | None:
@@ -30,6 +70,133 @@ def normalize_user_id(user_id: str | None) -> str | None:
 
     normalized = user_id.strip()
     return normalized or None
+
+
+def normalize_response_text(value: Any) -> str:
+    if value is None:
+        return ""
+    return value if isinstance(value, str) else str(value)
+
+
+def normalize_response_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    if isinstance(value, (int, float)):
+        return bool(value)
+
+    text = str(value).strip().casefold()
+    return text in {"1", "true", "yes", "y"}
+
+
+def normalize_response_string_list(value: Any) -> list[str]:
+    if isinstance(value, list):
+        return [normalize_response_text(item) for item in value if item is not None]
+    if isinstance(value, str) and value.strip():
+        return [value]
+    return []
+
+
+def normalize_section_type_key(value: Any) -> str:
+    section_type = normalize_response_text(value).strip().casefold()
+    return SECTION_TYPE_ALIASES.get(section_type, section_type)
+
+
+def sanitize_section_item_for_response(item: dict[str, Any], section_type: str) -> dict[str, Any] | None:
+    if section_type == "skill":
+        name = normalize_response_text(
+            item.get("name") or item.get("skill") or item.get("technology") or item.get("tool")
+        ).strip()
+        if not name:
+            return None
+        return {"name": name, "aiGenerated": normalize_response_bool(item.get("aiGenerated"))}
+
+    text_fields = SECTION_ITEM_TEXT_FIELDS.get(section_type)
+    if text_fields is None:
+        return None
+
+    sanitized = {field: normalize_response_text(item.get(field)) for field in text_fields}
+    for field in SECTION_ITEM_LIST_FIELDS.get(section_type, ()):
+        sanitized[field] = normalize_response_string_list(item.get(field))
+    return sanitized
+
+
+def sanitize_section_items_for_response(items: Any, section_type: str) -> str | list[Any]:
+    if isinstance(items, str):
+        return items
+    if not isinstance(items, list):
+        return []
+
+    sanitized_items: list[Any] = []
+    for item in items:
+        if isinstance(item, str):
+            sanitized_items.append(item)
+            continue
+        if not isinstance(item, dict):
+            sanitized_items.append(normalize_response_text(item))
+            continue
+
+        sanitized_item = sanitize_section_item_for_response(item, section_type)
+        if sanitized_item is not None:
+            sanitized_items.append(sanitized_item)
+
+    return sanitized_items
+
+
+def sanitize_resume_profile_for_response(profile: Any) -> dict[str, Any]:
+    if not isinstance(profile, dict):
+        return {}
+
+    normalized_profile = normalize_resume_profile_payload(deepcopy(profile))
+    if not isinstance(normalized_profile, dict):
+        return {}
+
+    data = normalized_profile.get("data")
+    if not isinstance(data, dict):
+        return {}
+
+    sanitized_data: dict[str, Any] = {
+        field: normalize_response_text(data.get(field)) for field in RESUME_DATA_TEXT_FIELDS
+    }
+    sanitized_data["secondaryAddress"] = (
+        None if data.get("secondaryAddress") is None else normalize_response_text(data.get("secondaryAddress"))
+    )
+
+    sections = data.get("sections")
+    sanitized_sections: list[dict[str, Any]] = []
+    if isinstance(sections, list):
+        for section in sections:
+            if not isinstance(section, dict):
+                continue
+
+            section_type = normalize_response_text(section.get("type"))
+            section_type_key = normalize_section_type_key(section_type)
+            sanitized_sections.append(
+                {
+                    "title": normalize_response_text(section.get("title")),
+                    "type": section_type,
+                    "items": sanitize_section_items_for_response(section.get("items"), section_type_key),
+                }
+            )
+
+    sanitized_data["sections"] = sanitized_sections
+    return {"data": sanitized_data}
+
+
+def sanitize_resume_response_document(document: dict[str, Any], image_url: str) -> dict[str, Any]:
+    stable_resume_id = normalize_response_text(document.get("resumeId") or document.get("id"))
+    return {
+        "id": normalize_response_text(document.get("id") or stable_resume_id),
+        "resumeId": stable_resume_id or None,
+        "userId": None if document.get("userId") is None else normalize_response_text(document.get("userId")),
+        "version": document.get("version") if isinstance(document.get("version"), int) else None,
+        "status": None if document.get("status") is None else normalize_response_text(document.get("status")),
+        "avatar": image_url,
+        "withPhoto": True,
+        "profile": sanitize_resume_profile_for_response(document.get("profile")),
+        "metadata": document.get("metadata") if isinstance(document.get("metadata"), dict) else {},
+    }
 
 
 def get_resume_image_storage(settings: Settings) -> ResumeImageStorage:
@@ -80,21 +247,26 @@ async def cleanup_stored_resume_image(storage: ResumeImageStorage, image: Any) -
 
 
 def build_resume_image_response(document: dict[str, Any], image_url: str) -> ResumeParseResponse:
-    response_document = dict(document)
-    response_document["avatar"] = image_url
-    response_document["withPhoto"] = True
+    response_document = sanitize_resume_response_document(document, image_url)
 
     try:
         return ResumeParseResponse.model_validate(response_document)
     except ValidationError as exc:
-        logger.exception("Saved resume image but failed to validate the resume image response.")
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=(
-                "Resume image was saved, but the saved resume document could not be returned "
-                "because it does not match the API response schema."
-            ),
-        ) from exc
+        logger.warning(
+            "Saved resume image but had to return a minimal response because the saved resume profile is invalid: %s",
+            exc.errors(),
+        )
+        return ResumeParseResponse(
+            id=response_document["id"],
+            resumeId=response_document["resumeId"],
+            userId=response_document["userId"],
+            version=response_document["version"],
+            status=response_document["status"],
+            avatar=image_url,
+            withPhoto=True,
+            profile=ResumeProfile(),
+            metadata=response_document["metadata"],
+        )
 
 
 def build_resume_image_url(request: Request, settings: Settings, filename: str) -> str:
