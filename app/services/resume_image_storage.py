@@ -57,9 +57,19 @@ class LocalResumeImageStorage:
         extension, content_type = detect_image_type(content)
         filename = build_image_filename(resume_id, extension)
 
-        self.storage_dir.mkdir(parents=True, exist_ok=True)
-        path = self.storage_dir / filename
-        path.write_bytes(content)
+        try:
+            self.storage_dir.mkdir(parents=True, exist_ok=True)
+            path = self.storage_dir / filename
+            path.write_bytes(content)
+        except OSError as exc:
+            logging.getLogger(__name__).exception(
+                "Local resume image storage write failed directory=%s",
+                self.storage_dir,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Failed to save resume image to local storage.",
+            ) from exc
 
         return StoredResumeImage(
             filename=filename,

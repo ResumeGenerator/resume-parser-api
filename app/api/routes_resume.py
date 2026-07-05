@@ -310,7 +310,17 @@ async def upload_resume_image(
         )
 
     storage = get_resume_image_storage(settings)
-    stored_image = await storage.save_upload(resume_id, file, settings.resume_image_max_size_bytes)
+    try:
+        stored_image = await storage.save_upload(resume_id, file, settings.resume_image_max_size_bytes)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Failed to save uploaded resume image to configured storage.")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Resume image storage is configured but failed to save the uploaded file.",
+        ) from exc
+
     image_url = str(request.url_for("get_resume_image", filename=stored_image.filename))
     image_metadata = {
         "url": image_url,

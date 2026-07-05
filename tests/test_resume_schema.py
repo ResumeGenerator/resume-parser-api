@@ -884,6 +884,47 @@ class ResumeImageEndpointTests(unittest.TestCase):
             self.assertEqual(fake_repository.saved_metadata["contentType"], "image/png")
             self.assertTrue((LocalResumeImageStorage(temp_dir).storage_dir / saved_filename).is_file())
 
+    def test_upload_resume_image_returns_503_when_storage_save_fails(self) -> None:
+        class FakeRepository:
+            async def get(self, resume_id: str, user_id: str | None = None) -> dict:
+                return {
+                    "id": resume_id,
+                    "resumeId": resume_id,
+                    "userId": user_id,
+                    "version": 1,
+                    "status": "parsed",
+                    "profile": {"data": {"name": "Alex Morgan", "sections": []}},
+                    "metadata": {"filename": "alex.pdf"},
+                    "avatar": "",
+                    "withPhoto": False,
+                }
+
+        class BrokenStorage:
+            async def save_upload(self, *args: object, **kwargs: object) -> object:
+                raise OSError("storage is not writable")
+
+        image = BytesIO()
+        Image.new("RGB", (1, 1), color="white").save(image, format="PNG")
+        settings = Settings(MONGO_URI="mongodb://example")
+        app.dependency_overrides[get_settings] = lambda: settings
+        try:
+            with (
+                patch("app.api.routes_resume.get_resume_repository", return_value=FakeRepository()),
+                patch("app.api.routes_resume.get_resume_image_storage", return_value=BrokenStorage()),
+            ):
+                response = TestClient(app).post(
+                    "/api/resumes/resume123/image",
+                    files={"file": ("avatar.png", image.getvalue(), "image/png")},
+                )
+        finally:
+            app.dependency_overrides.clear()
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(
+            response.json()["detail"],
+            "Resume image storage is configured but failed to save the uploaded file.",
+        )
+
     def test_s3_storage_factory_uses_railway_credentials(self) -> None:
         settings = Settings(
             RESUME_IMAGE_STORAGE_BACKEND="s3",
