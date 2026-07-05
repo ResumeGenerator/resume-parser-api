@@ -7,6 +7,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     app_name: str = Field(default="Resume Parser Service", alias="APP_NAME")
+    public_api_base_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("PUBLIC_API_BASE_URL", "API_PUBLIC_BASE_URL", "APP_PUBLIC_URL"),
+    )
     max_file_size_mb: int = Field(default=5, alias="MAX_FILE_SIZE_MB")
     resume_image_max_size_mb: int = Field(default=5, alias="RESUME_IMAGE_MAX_SIZE_MB")
     resume_image_storage_backend: str = Field(default="local", alias="RESUME_IMAGE_STORAGE_BACKEND")

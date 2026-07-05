@@ -319,6 +319,28 @@ class ResumeSchemaTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             ResumeProfile.model_validate(payload)
 
+    def test_service_payload_normalizer_strips_legacy_presentation_fields(self) -> None:
+        payload = {
+            "profile": {
+                "data": {"sections": []},
+                "template": "professional-dark-blue",
+                "format": "html",
+                "font": "Arial",
+                "color": "#000000",
+                "withPhoto": True,
+                "avatar": "https://example.com/avatar.png",
+                "image": {"filename": "avatar.png"},
+                "contactsTitle": "Contacts",
+                "detailsTitle": "Details",
+            }
+        }
+
+        normalized = normalize_resume_profile_payload(payload)
+        profile = ResumeProfile.model_validate(normalized)
+
+        self.assertEqual(set(normalized), {"data"})
+        self.assertEqual(profile.data.sections, [])
+
 
 class ResumeRephraseTests(unittest.IsolatedAsyncioTestCase):
     def test_rephrase_request_strips_text(self) -> None:
@@ -883,6 +905,138 @@ class ResumeImageEndpointTests(unittest.TestCase):
             self.assertEqual(fake_repository.saved_metadata["storageBackend"], "local")
             self.assertEqual(fake_repository.saved_metadata["contentType"], "image/png")
             self.assertTrue((LocalResumeImageStorage(temp_dir).storage_dir / saved_filename).is_file())
+
+    def test_upload_resume_image_uses_configured_public_api_base_url(self) -> None:
+        class FakeRepository:
+            def __init__(self) -> None:
+                self.saved_image_url: str | None = None
+
+            async def get(self, resume_id: str, user_id: str | None = None) -> dict:
+                return {
+                    "id": resume_id,
+                    "resumeId": resume_id,
+                    "userId": user_id,
+                    "version": 1,
+                    "status": "parsed",
+                    "profile": {"data": {"name": "Alex Morgan", "sections": []}},
+                    "metadata": {"filename": "alex.pdf"},
+                    "avatar": "",
+                    "withPhoto": False,
+                }
+
+            async def save_image(
+                self,
+                resume_id: str,
+                image_url: str,
+                image_metadata: dict,
+                user_id: str | None = None,
+            ) -> dict:
+                self.saved_image_url = image_url
+                return {
+                    "id": resume_id,
+                    "resumeId": resume_id,
+                    "userId": user_id,
+                    "version": 1,
+                    "status": "parsed",
+                    "profile": {"data": {"name": "Alex Morgan", "sections": []}},
+                    "metadata": {"filename": "alex.pdf"},
+                    "avatar": image_url,
+                    "withPhoto": True,
+                }
+
+        image = BytesIO()
+        Image.new("RGB", (1, 1), color="white").save(image, format="PNG")
+        fake_repository = FakeRepository()
+
+        with TemporaryDirectory() as temp_dir:
+            settings = Settings(
+                MONGO_URI="mongodb://example",
+                RESUME_IMAGE_STORAGE_DIR=temp_dir,
+                PUBLIC_API_BASE_URL="https://resume-parser-api-staging.up.railway.app/",
+            )
+            app.dependency_overrides[get_settings] = lambda: settings
+            try:
+                with patch("app.api.routes_resume.get_resume_repository", return_value=fake_repository):
+                    response = TestClient(app).post(
+                        "/api/resumes/resume123/image",
+                        files={"file": ("avatar.png", image.getvalue(), "image/png")},
+                    )
+            finally:
+                app.dependency_overrides.clear()
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(
+            payload["avatar"].startswith(
+                "https://resume-parser-api-staging.up.railway.app/api/resumes/images/resume123-"
+            )
+        )
+        self.assertEqual(fake_repository.saved_image_url, payload["avatar"])
+
+    def test_upload_resume_image_uses_pre_upload_resume_for_response(self) -> None:
+        class FakeRepository:
+            def __init__(self) -> None:
+                self.saved_image_url: str | None = None
+
+            async def get(self, resume_id: str, user_id: str | None = None) -> dict:
+                return {
+                    "id": resume_id,
+                    "resumeId": resume_id,
+                    "userId": user_id,
+                    "version": 1,
+                    "status": "parsed",
+                    "profile": {"data": {"name": "Alex Morgan", "sections": []}},
+                    "metadata": {"filename": "alex.pdf"},
+                    "avatar": "",
+                    "withPhoto": False,
+                }
+
+            async def save_image(
+                self,
+                resume_id: str,
+                image_url: str,
+                image_metadata: dict,
+                user_id: str | None = None,
+            ) -> dict:
+                self.saved_image_url = image_url
+                return {
+                    "id": resume_id,
+                    "resumeId": resume_id,
+                    "userId": user_id,
+                    "version": 1,
+                    "status": "parsed",
+                    "profile": {
+                        "data": {"name": "Alex Morgan", "sections": []},
+                        "template": "legacy-template",
+                    },
+                    "metadata": {"filename": "alex.pdf"},
+                    "avatar": image_url,
+                    "withPhoto": True,
+                    "image": image_metadata,
+                }
+
+        image = BytesIO()
+        Image.new("RGB", (1, 1), color="white").save(image, format="PNG")
+        fake_repository = FakeRepository()
+
+        with TemporaryDirectory() as temp_dir:
+            settings = Settings(MONGO_URI="mongodb://example", RESUME_IMAGE_STORAGE_DIR=temp_dir)
+            app.dependency_overrides[get_settings] = lambda: settings
+            try:
+                with patch("app.api.routes_resume.get_resume_repository", return_value=fake_repository):
+                    response = TestClient(app).post(
+                        "/api/resumes/resume123/image",
+                        files={"file": ("avatar.png", image.getvalue(), "image/png")},
+                    )
+            finally:
+                app.dependency_overrides.clear()
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["profile"]["data"]["name"], "Alex Morgan")
+        self.assertTrue(payload["withPhoto"])
+        self.assertEqual(payload["avatar"], fake_repository.saved_image_url)
+        self.assertNotIn("image", payload)
 
     def test_upload_resume_image_returns_503_when_storage_save_fails(self) -> None:
         class FakeRepository:

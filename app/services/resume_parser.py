@@ -63,6 +63,17 @@ _AI_GENERATED_FALSE_VALUES = {
     "not ai generated",
 }
 _FIELD_OF_STUDY_KEYS = ("fieldOfStudy", "field_of_study", "field", "major", "specialization", "specialisation")
+_PROFILE_PRESENTATION_KEYS = {
+    "avatar",
+    "color",
+    "contactsTitle",
+    "detailsTitle",
+    "font",
+    "format",
+    "image",
+    "template",
+    "withPhoto",
+}
 _NON_FIELD_OF_STUDY_MARKERS = {
     "hon",
     "hons",
@@ -344,15 +355,22 @@ def normalize_resume_profile_payload(raw_profile: object) -> object:
 
     wrapped_profile = raw_profile.get("profile")
     if isinstance(wrapped_profile, dict):
+        strip_profile_presentation_fields(wrapped_profile)
         normalize_summary_section_items(wrapped_profile)
         normalize_education_field_of_study(wrapped_profile)
         normalize_skill_section_items(wrapped_profile)
         return wrapped_profile
 
+    strip_profile_presentation_fields(raw_profile)
     normalize_summary_section_items(raw_profile)
     normalize_education_field_of_study(raw_profile)
     normalize_skill_section_items(raw_profile)
     return raw_profile
+
+
+def strip_profile_presentation_fields(raw_profile: dict) -> None:
+    for key in _PROFILE_PRESENTATION_KEYS:
+        raw_profile.pop(key, None)
 
 
 class ResumeParserService:

@@ -79,6 +79,33 @@ async def cleanup_stored_resume_image(storage: ResumeImageStorage, image: Any) -
         logger.warning("Failed to clean up uploaded resume image after a later error.", exc_info=True)
 
 
+def build_resume_image_response(document: dict[str, Any], image_url: str) -> ResumeParseResponse:
+    response_document = dict(document)
+    response_document["avatar"] = image_url
+    response_document["withPhoto"] = True
+
+    try:
+        return ResumeParseResponse.model_validate(response_document)
+    except ValidationError as exc:
+        logger.exception("Saved resume image but failed to validate the resume image response.")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=(
+                "Resume image was saved, but the saved resume document could not be returned "
+                "because it does not match the API response schema."
+            ),
+        ) from exc
+
+
+def build_resume_image_url(request: Request, settings: Settings, filename: str) -> str:
+    public_api_base_url = (settings.public_api_base_url or "").strip().rstrip("/")
+    if public_api_base_url:
+        path = request.app.url_path_for("get_resume_image", filename=filename)
+        return f"{public_api_base_url}{path}"
+
+    return str(request.url_for("get_resume_image", filename=filename))
+
+
 async def read_rephrase_request(request: Request) -> ResumeRephraseRequest:
     body = await request.body()
     content_type = request.headers.get("content-type", "").split(";", 1)[0].lower()
@@ -321,7 +348,7 @@ async def upload_resume_image(
             detail="Resume image storage is configured but failed to save the uploaded file.",
         ) from exc
 
-    image_url = str(request.url_for("get_resume_image", filename=stored_image.filename))
+    image_url = build_resume_image_url(request, settings, stored_image.filename)
     image_metadata = {
         "url": image_url,
         "filename": stored_image.filename,
@@ -333,7 +360,7 @@ async def upload_resume_image(
     }
 
     try:
-        return await repository.save_image(resume_id, image_url, image_metadata, user_id=normalized_user_id)
+        await repository.save_image(resume_id, image_url, image_metadata, user_id=normalized_user_id)
     except ResumeNotFoundError as exc:
         await cleanup_stored_resume_image(storage, stored_image)
         raise HTTPException(
@@ -347,6 +374,8 @@ async def upload_resume_image(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="MongoDB is configured but failed to save the resume image URL.",
         ) from exc
+
+    return build_resume_image_response(existing_document, image_url)
 
 
 @router.post("/{resume_id}/edits", response_model=ResumeParseResponse)

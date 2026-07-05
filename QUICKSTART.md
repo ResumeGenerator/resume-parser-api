@@ -20,6 +20,7 @@ Your resume parser API now has **automatic OCR fallback support** for scanned/im
    OCR_MODEL=gpt-4.1-mini
    OCR_MAX_PAGES=5
    OCR_DPI=200
+   PUBLIC_API_BASE_URL=https://resume-parser-api-staging.up.railway.app
    RESUME_IMAGE_STORAGE_BACKEND=s3
    S3_ENDPOINT_URL=https://t3.storageapi.dev
    S3_REGION=auto
@@ -187,6 +188,7 @@ docker run -p 8000:8000 \
   -e OCR_FALLBACK_ENABLED=true \
   -e OPENAI_API_KEY=sk-... \
   -e MONGO_EDITED_COLLECTION=edited_resumes \
+  -e PUBLIC_API_BASE_URL=https://resume-parser-api-staging.up.railway.app \
   -e RESUME_IMAGE_STORAGE_BACKEND=s3 \
   -e S3_ENDPOINT_URL=https://t3.storageapi.dev \
   -e S3_REGION=auto \

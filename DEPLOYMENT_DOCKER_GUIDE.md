@@ -57,6 +57,7 @@ docker run -p 8000:8000 \
   -e OPENAI_API_KEY=sk-... \
   -e MONGO_URI=mongodb://mongo:27017 \
   -e MONGO_EDITED_COLLECTION=edited_resumes \
+  -e PUBLIC_API_BASE_URL=https://resume-parser-api-staging.up.railway.app \
   -e RESUME_IMAGE_STORAGE_BACKEND=s3 \
   -e S3_ENDPOINT_URL=https://t3.storageapi.dev \
   -e S3_REGION=auto \
@@ -83,6 +84,7 @@ services:
     environment:
       APP_NAME: Resume Parser Service
       MAX_FILE_SIZE_MB: 5
+      PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL}
       RESUME_IMAGE_STORAGE_BACKEND: s3
       S3_ENDPOINT_URL: https://t3.storageapi.dev
       S3_REGION: auto

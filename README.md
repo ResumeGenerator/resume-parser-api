@@ -78,6 +78,7 @@ docker run --env-file .env -p 8000:8000 resume-parser-service
 | Variable | Description |
 | --- | --- |
 | `APP_NAME` | FastAPI app name |
+| `PUBLIC_API_BASE_URL` | Public API origin used when generating avatar URLs, for example `https://resume-parser-api-staging.up.railway.app` |
 | `MAX_FILE_SIZE_MB` | Maximum upload size in MB |
 | `RESUME_IMAGE_MAX_SIZE_MB` | Maximum resume image upload size in MB |
 | `RESUME_IMAGE_STORAGE_BACKEND` | `s3` for Railway bucket storage, or `local` for local filesystem storage |
@@ -108,6 +109,7 @@ MONGO_URI=...
 MONGO_DATABASE=resume_parser
 MONGO_COLLECTION=parsed_resumes
 MONGO_EDITED_COLLECTION=edited_resumes
+PUBLIC_API_BASE_URL=https://resume-parser-api-staging.up.railway.app
 RESUME_IMAGE_STORAGE_BACKEND=s3
 S3_ENDPOINT_URL=https://t3.storageapi.dev
 S3_REGION=auto
@@ -196,6 +198,7 @@ The file is saved to the configured storage backend. With `RESUME_IMAGE_STORAGE_
 ```
 
 The same values are stored on the MongoDB resume document, and `GET /api/resumes/{resume_id}` returns them. The avatar URL points to the API image endpoint, which reads the object back from Railway storage.
+Direct Railway bucket URLs such as `https://t3.storageapi.dev/<bucket>/<key>` can return `AccessDenied` because the bucket is private; use the `/api/resumes/images/{filename}` API URL instead.
 
 ## Example Response
 
