@@ -8,6 +8,8 @@ FastAPI service for extracting structured resume data from uploaded PDF, DOCX, o
 - `POST /api/resumes/{resume_id}/image` uploads a resume photo and stores its URL
 - `POST /api/resumes/rephrase` accepts text and returns resume-ready rephrasing
 - `POST /api/resumes/{resume_id}/edits` saves a single edited profile record per parsed resume
+- `GET /api/resumes/{resume_id}/ats-score` calculates a deterministic ATS readiness score from saved resume JSON
+- `GET /api/resumes/{resume_id}/compare-ats-score` compares parsed and edited ATS readiness scores
 - Resume save and fetch endpoints accept optional `userId` ownership filtering
 - Supports `.pdf`, `.docx`, and `.txt`
 - Configurable max upload size through `MAX_FILE_SIZE_MB`
@@ -26,6 +28,7 @@ resume-parser-service/
 app/
   main.py
   api/
+    routes_ats.py
     routes_resume.py
   core/
     config.py
@@ -33,8 +36,10 @@ app/
     rephrase_prompt.py
     resume_prompt.py
   models/
+    ats_schema.py
     resume_schema.py
   services/
+    ats_score_service.py
     text_extractor.py
     resume_parser.py
     resume_rephraser.py
@@ -107,8 +112,8 @@ OPENAI_API_KEY=...
 LLM_PROVIDER=openai
 MONGO_URI=...
 MONGO_DATABASE=resume_parser
-MONGO_COLLECTION=parsed_resumes
-MONGO_EDITED_COLLECTION=edited_resumes
+MONGO_COLLECTION=parsed_resume
+MONGO_EDITED_COLLECTION=edited_resume
 PUBLIC_API_BASE_URL=https://resume-parser-api-staging.up.railway.app
 RESUME_IMAGE_STORAGE_BACKEND=s3
 S3_ENDPOINT_URL=https://t3.storageapi.dev
@@ -178,6 +183,28 @@ Response:
 ```
 
 The endpoint is intended for work experience bullets and professional summary text. It uses the separate `app/core/rephrase_prompt.py` prompt and validates the OpenAI JSON response before returning it.
+
+## ATS Readiness Score
+
+Calculate an ATS readiness / resume optimization score from an already saved MongoDB resume JSON document. This endpoint does not upload, reparse, regenerate, or call an LLM.
+
+```bash
+curl "http://localhost:8000/api/resumes/{resumeId}/ats-score?source=edited"
+```
+
+```bash
+curl "http://localhost:8000/api/resumes/{resumeId}/ats-score?source=parsed&jobDescription=Senior%20.NET%20Developer%20Azure"
+```
+
+Compare the original parsed resume with the latest edited resume:
+
+```bash
+curl "http://localhost:8000/api/resumes/{resumeId}/compare-ats-score"
+```
+
+The `source` query parameter accepts `parsed` or `edited` and defaults to `edited`. When `jobDescription` is provided, the response includes a job keyword match analysis in addition to the overall ATS readiness score.
+
+This score is an ATS readiness / resume optimization score based on deterministic product rules. It is not an official score from Workday, Taleo, Greenhouse, Lever, or any other ATS vendor.
 
 ## Upload Resume Image
 

@@ -61,11 +61,11 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("MONGO_DATABASE", "MONGO_DB", "MONGODB_DATABASE"),
     )
     mongodb_resume_collection: str = Field(
-        default="parsed_resumes",
+        default="parsed_resume",
         validation_alias=AliasChoices("MONGO_COLLECTION", "MONGODB_RESUME_COLLECTION"),
     )
     mongodb_edited_resume_collection: str = Field(
-        default="edited_resumes",
+        default="edited_resume",
         validation_alias=AliasChoices("MONGO_EDITED_COLLECTION", "MONGODB_EDITED_RESUME_COLLECTION"),
     )
 

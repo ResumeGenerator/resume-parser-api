@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.routes_ats import router as ats_router
 from app.api.routes_resume import router as resume_router
 from app.core.config import get_settings
 from app.core.database import close_database, initialize_database
@@ -98,6 +99,7 @@ app.add_middleware(
     allow_headers=["*"],  # Allows all headers
 )
 
+app.include_router(ats_router)
 app.include_router(resume_router)
 
 
