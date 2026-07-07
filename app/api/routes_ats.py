@@ -19,7 +19,6 @@ ALLOWED_SOURCES = {"parsed", "edited"}
 async def get_ats_score(
     resumeId: str,
     source: str = Query(default="edited"),
-    jobDescription: str | None = Query(default=None),
     settings: Settings = Depends(get_settings),
 ) -> AtsScoreResponse:
     normalized_source = source.strip().casefold()
@@ -51,7 +50,7 @@ async def get_ats_score(
         )
 
     try:
-        result = calculate_ats_score(_resume_content_for_scoring(resume_document), jobDescription)
+        result = calculate_ats_score(_resume_content_for_scoring(resume_document))
     except Exception as exc:
         logger.exception("Failed to calculate ATS score.")
         raise HTTPException(
@@ -71,7 +70,6 @@ async def get_ats_score(
 @router.get("/{resumeId}/compare-ats-score", response_model=CompareAtsScoreResponse)
 async def compare_resume_ats_score(
     resumeId: str,
-    jobDescription: str | None = Query(default=None),
     settings: Settings = Depends(get_settings),
 ) -> CompareAtsScoreResponse:
     try:
@@ -99,7 +97,6 @@ async def compare_resume_ats_score(
         result = compare_ats_scores(
             _resume_content_for_scoring(parsed_resume),
             _resume_content_for_scoring(edited_resume),
-            jobDescription,
         )
     except Exception as exc:
         logger.exception("Failed to compare ATS scores.")

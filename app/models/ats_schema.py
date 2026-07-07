@@ -18,14 +18,6 @@ class AtsScoreBreakdown(StrictAtsModel):
     formatting: int = Field(ge=0, le=10)
 
 
-class JobMatchAnalysis(StrictAtsModel):
-    matchScore: int = Field(ge=0, le=100)
-    matchLevel: str
-    matchedKeywords: list[str] = Field(default_factory=list)
-    missingKeywords: list[str] = Field(default_factory=list)
-    suggestions: list[str] = Field(default_factory=list)
-
-
 class AtsScoreResponse(StrictAtsModel):
     resumeId: str
     source: Literal["parsed", "edited"]
@@ -39,7 +31,6 @@ class AtsScoreResponse(StrictAtsModel):
     keywordGaps: list[str] = Field(default_factory=list)
     formattingRisks: list[str] = Field(default_factory=list)
     improvementSuggestions: list[str] = Field(default_factory=list)
-    jobMatchAnalysis: JobMatchAnalysis | None = None
 
 
 class AtsScoreSummary(StrictAtsModel):

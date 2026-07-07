@@ -144,6 +144,7 @@ class AtsEndpointTests(unittest.TestCase):
         self.assertEqual(fake_repository.requested_source, "edited")
         self.assertEqual(response.json()["resumeId"], "resume123")
         self.assertEqual(response.json()["source"], "edited")
+        self.assertNotIn("jobMatchAnalysis", response.json())
 
     def test_ats_score_endpoint_rejects_invalid_source_with_400(self) -> None:
         response = TestClient(app).get("/api/resumes/resume123/ats-score?source=raw")

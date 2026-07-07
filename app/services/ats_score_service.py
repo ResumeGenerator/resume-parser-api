@@ -240,7 +240,7 @@ def calculate_ats_score(resume_json: dict, job_description: str | None = None) -
     }
     ats_score = max(0, min(100, sum(score_breakdown.values())))
 
-    return {
+    result = {
         "atsScore": ats_score,
         "scoreLevel": _score_level(ats_score),
         "summary": _score_summary(ats_score, bool(job_description_text)),
@@ -251,8 +251,11 @@ def calculate_ats_score(resume_json: dict, job_description: str | None = None) -
         "keywordGaps": keyword_gaps,
         "formattingRisks": _dedupe(formatting_risks),
         "improvementSuggestions": _dedupe(improvement_suggestions),
-        "jobMatchAnalysis": job_match_analysis,
     }
+    if job_match_analysis is not None:
+        result["jobMatchAnalysis"] = job_match_analysis
+
+    return result
 
 
 def compare_ats_scores(

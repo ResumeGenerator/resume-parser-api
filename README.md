@@ -192,17 +192,13 @@ Calculate an ATS readiness / resume optimization score from an already saved Mon
 curl "http://localhost:8000/api/resumes/{resumeId}/ats-score?source=edited"
 ```
 
-```bash
-curl "http://localhost:8000/api/resumes/{resumeId}/ats-score?source=parsed&jobDescription=Senior%20.NET%20Developer%20Azure"
-```
-
 Compare the original parsed resume with the latest edited resume:
 
 ```bash
 curl "http://localhost:8000/api/resumes/{resumeId}/compare-ats-score"
 ```
 
-The `source` query parameter accepts `parsed` or `edited` and defaults to `edited`. When `jobDescription` is provided, the response includes a job keyword match analysis in addition to the overall ATS readiness score.
+The `source` query parameter accepts `parsed` or `edited` and defaults to `edited`.
 
 This score is an ATS readiness / resume optimization score based on deterministic product rules. It is not an official score from Workday, Taleo, Greenhouse, Lever, or any other ATS vendor.
 
