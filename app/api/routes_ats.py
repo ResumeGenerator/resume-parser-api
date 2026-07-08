@@ -19,6 +19,7 @@ ALLOWED_SOURCES = {"parsed", "edited"}
 async def get_ats_score(
     resumeId: str,
     source: str = Query(default="edited"),
+    userId: str | None = Query(default=None),
     settings: Settings = Depends(get_settings),
 ) -> AtsScoreResponse:
     normalized_source = source.strip().casefold()
@@ -30,7 +31,11 @@ async def get_ats_score(
 
     try:
         repository = get_resume_repository(settings)
-        resume_document = await repository.get_resume_by_id(resumeId, normalized_source)
+        resume_document = await repository.get_resume_by_id(
+            resumeId,
+            normalized_source,
+            user_id=_normalize_user_id(userId),
+        )
     except ResumeRepositoryNotConfiguredError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -70,11 +75,15 @@ async def get_ats_score(
 @router.get("/{resumeId}/compare-ats-score", response_model=CompareAtsScoreResponse)
 async def compare_resume_ats_score(
     resumeId: str,
+    userId: str | None = Query(default=None),
     settings: Settings = Depends(get_settings),
 ) -> CompareAtsScoreResponse:
     try:
         repository = get_resume_repository(settings)
-        parsed_resume, edited_resume = await repository.get_parsed_and_edited_resume(resumeId)
+        parsed_resume, edited_resume = await repository.get_parsed_and_edited_resume(
+            resumeId,
+            user_id=_normalize_user_id(userId),
+        )
     except ResumeRepositoryNotConfiguredError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -122,3 +131,11 @@ def _resume_content_for_scoring(document: dict[str, Any]) -> dict[str, Any]:
 
 def _stable_resume_id(document: dict[str, Any], fallback: str) -> str:
     return str(document.get("resumeId") or document.get("id") or document.get("_id") or fallback)
+
+
+def _normalize_user_id(user_id: str | None) -> str | None:
+    if user_id is None:
+        return None
+
+    normalized = user_id.strip()
+    return normalized or None

@@ -113,25 +113,66 @@ class MongoResumeRepository:
 
         return self._to_response_document(original, stable_resume_id=stable_resume_id)
 
-    async def get_resume_by_id(self, resume_id: str, source: str) -> dict[str, Any] | None:
+    async def get_resume_by_id(
+        self,
+        resume_id: str,
+        source: str,
+        user_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        user_id = self._normalize_user_id(user_id)
         normalized_source = source.strip().casefold()
         if normalized_source == "parsed":
-            return await self._find_resume_document(self.collection, resume_id)
+            return await self._find_resume_document(self.collection, resume_id, user_id=user_id)
         if normalized_source == "edited":
-            return await self._find_resume_document(
+            edited_resume = await self._find_resume_document(
                 self.edited_collection,
                 resume_id,
                 sort=[("updatedAt", -1)],
+                user_id=user_id,
             )
+            if edited_resume is not None:
+                return edited_resume
+
+            original = await self._find_resume_document(self.collection, resume_id, user_id=user_id)
+            if original is None:
+                return None
+
+            stable_resume_id = self._stable_resume_id(original)
+            if stable_resume_id != str(resume_id).strip():
+                edited_resume = await self._find_resume_document(
+                    self.edited_collection,
+                    stable_resume_id,
+                    sort=[("updatedAt", -1)],
+                    user_id=user_id,
+                )
+                if edited_resume is not None:
+                    return edited_resume
+
+            return original
 
         raise ValueError("source must be either 'parsed' or 'edited'.")
 
-    async def get_parsed_and_edited_resume(self, resume_id: str) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
-        parsed_resume = await self.get_resume_by_id(resume_id, "parsed")
+    async def get_parsed_and_edited_resume(
+        self,
+        resume_id: str,
+        user_id: str | None = None,
+    ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+        user_id = self._normalize_user_id(user_id)
+        parsed_resume = await self.get_resume_by_id(resume_id, "parsed", user_id=user_id)
         stable_resume_id = self._stable_resume_id(parsed_resume) if parsed_resume is not None else resume_id
-        edited_resume = await self.get_resume_by_id(stable_resume_id, "edited")
+        edited_resume = await self._find_resume_document(
+            self.edited_collection,
+            stable_resume_id,
+            sort=[("updatedAt", -1)],
+            user_id=user_id,
+        )
         if edited_resume is None and stable_resume_id != resume_id:
-            edited_resume = await self.get_resume_by_id(resume_id, "edited")
+            edited_resume = await self._find_resume_document(
+                self.edited_collection,
+                resume_id,
+                sort=[("updatedAt", -1)],
+                user_id=user_id,
+            )
 
         return parsed_resume, edited_resume
 
@@ -253,6 +294,7 @@ class MongoResumeRepository:
         collection: AsyncIOMotorCollection,
         resume_id: str,
         sort: list[tuple[str, int]] | None = None,
+        user_id: str | None = None,
     ) -> dict[str, Any] | None:
         normalized_resume_id = str(resume_id).strip()
         if not normalized_resume_id:
@@ -265,11 +307,13 @@ class MongoResumeRepository:
         if ObjectId.is_valid(normalized_resume_id):
             filters.append({"_id": ObjectId(normalized_resume_id)})
 
-        id_filter = {"$or": filters}
+        id_filter: dict[str, Any] = {"$or": filters}
+        user_id = self._normalize_user_id(user_id)
+        query = {"$and": [id_filter, {"userId": user_id}]} if user_id else id_filter
         if sort is not None:
-            return await collection.find_one(id_filter, sort=sort)
+            return await collection.find_one(query, sort=sort)
 
-        return await collection.find_one(id_filter)
+        return await collection.find_one(query)
 
     @staticmethod
     def _stable_resume_id(document: dict[str, Any]) -> str:

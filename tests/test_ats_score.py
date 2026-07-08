@@ -108,6 +108,49 @@ class AtsRepositoryTests(unittest.IsolatedAsyncioTestCase):
             sort=[("updatedAt", -1)],
         )
 
+    async def test_get_resume_by_id_edited_source_falls_back_to_main_collection_with_user_id(self) -> None:
+        repository = MongoResumeRepository.__new__(MongoResumeRepository)
+        repository.collection = unittest.mock.Mock()
+        repository.edited_collection = unittest.mock.Mock()
+        original_resume = {"resumeId": "resume123", "userId": "user-123"}
+        repository.edited_collection.find_one = AsyncMock(return_value=None)
+        repository.collection.find_one = AsyncMock(return_value=original_resume)
+
+        document = await repository.get_resume_by_id("resume123", "edited", user_id=" user-123 ")
+
+        expected_query = {
+            "$and": [
+                {"$or": [{"resumeId": "resume123"}, {"id": "resume123"}]},
+                {"userId": "user-123"},
+            ]
+        }
+        self.assertEqual(document, original_resume)
+        repository.edited_collection.find_one.assert_awaited_once_with(
+            expected_query,
+            sort=[("updatedAt", -1)],
+        )
+        repository.collection.find_one.assert_awaited_once_with(expected_query)
+
+    async def test_get_resume_by_id_edited_source_resolves_stable_id_from_main_collection(self) -> None:
+        repository = MongoResumeRepository.__new__(MongoResumeRepository)
+        repository.collection = unittest.mock.Mock()
+        repository.edited_collection = unittest.mock.Mock()
+        repository.collection.find_one = AsyncMock(return_value={"_id": "mongo-id", "resumeId": "stable-id"})
+        repository.edited_collection.find_one = AsyncMock(side_effect=[None, {"resumeId": "stable-id"}])
+
+        document = await repository.get_resume_by_id("mongo-id", "edited")
+
+        self.assertEqual(document, {"resumeId": "stable-id"})
+        self.assertEqual(repository.edited_collection.find_one.await_count, 2)
+        repository.edited_collection.find_one.assert_any_await(
+            {"$or": [{"resumeId": "mongo-id"}, {"id": "mongo-id"}]},
+            sort=[("updatedAt", -1)],
+        )
+        repository.edited_collection.find_one.assert_any_await(
+            {"$or": [{"resumeId": "stable-id"}, {"id": "stable-id"}]},
+            sort=[("updatedAt", -1)],
+        )
+
     async def test_get_parsed_and_edited_resume_uses_stable_resume_id(self) -> None:
         repository = MongoResumeRepository.__new__(MongoResumeRepository)
         repository.collection = unittest.mock.Mock()
@@ -130,18 +173,29 @@ class AtsEndpointTests(unittest.TestCase):
         class FakeRepository:
             def __init__(self) -> None:
                 self.requested_source: str | None = None
+                self.requested_user_id: str | None = None
 
-            async def get_resume_by_id(self, resume_id: str, source: str) -> dict:
+            async def get_resume_by_id(
+                self,
+                resume_id: str,
+                source: str,
+                user_id: str | None = None,
+            ) -> dict:
                 self.requested_source = source
+                self.requested_user_id = user_id
                 return {"resumeId": resume_id, "profile": build_strong_resume()}
 
         fake_repository = FakeRepository()
 
         with patch("app.api.routes_ats.get_resume_repository", return_value=fake_repository):
-            response = TestClient(app).get("/api/resumes/resume123/ats-score")
+            response = TestClient(app).get(
+                "/api/resumes/resume123/ats-score",
+                params={"userId": " user-123 "},
+            )
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(fake_repository.requested_source, "edited")
+        self.assertEqual(fake_repository.requested_user_id, "user-123")
         self.assertEqual(response.json()["resumeId"], "resume123")
         self.assertEqual(response.json()["source"], "edited")
         self.assertNotIn("jobMatchAnalysis", response.json())
@@ -153,7 +207,11 @@ class AtsEndpointTests(unittest.TestCase):
 
     def test_compare_ats_score_endpoint_returns_improvement(self) -> None:
         class FakeRepository:
-            async def get_parsed_and_edited_resume(self, resume_id: str) -> tuple[dict, dict]:
+            async def get_parsed_and_edited_resume(
+                self,
+                resume_id: str,
+                user_id: str | None = None,
+            ) -> tuple[dict, dict]:
                 return (
                     {
                         "resumeId": resume_id,
