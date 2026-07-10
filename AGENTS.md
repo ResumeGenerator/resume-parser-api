@@ -74,7 +74,6 @@ Common optional settings:
 - `OCR_DPI`, default `200`
 - `MONGO_DATABASE` or `MONGO_DB` or `MONGODB_DATABASE`
 - `MONGO_COLLECTION` or `MONGODB_RESUME_COLLECTION`
-- `MONGO_EDITED_COLLECTION` or `MONGODB_EDITED_RESUME_COLLECTION`
 
 Do not hardcode secrets. Use `.env.example` for documenting new variables.
 

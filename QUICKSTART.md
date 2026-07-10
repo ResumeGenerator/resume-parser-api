@@ -187,7 +187,7 @@ docker build -t resume-parser:ocr .
 docker run -p 8000:8000 \
   -e OCR_FALLBACK_ENABLED=true \
   -e OPENAI_API_KEY=sk-... \
-  -e MONGO_EDITED_COLLECTION=edited_resumes \
+  -e MONGO_COLLECTION=parsed_resumes \
   -e PUBLIC_API_BASE_URL=https://resume-parser-api-staging.up.railway.app \
   -e RESUME_IMAGE_STORAGE_BACKEND=s3 \
   -e S3_ENDPOINT_URL=https://t3.storageapi.dev \

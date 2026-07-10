@@ -7,7 +7,7 @@ FastAPI service for extracting structured resume data from uploaded PDF, DOCX, o
 - `POST /api/resumes/parse` accepts `multipart/form-data`
 - `POST /api/resumes/{resume_id}/image` uploads a resume photo and stores its URL
 - `POST /api/resumes/rephrase` accepts text and returns resume-ready rephrasing
-- `POST /api/resumes/{resume_id}/edits` saves a single edited profile record per parsed resume
+- `POST /api/resumes/{resume_id}/edits` saves the latest edited profile inside its parsed resume document
 - `GET /api/resumes/{resume_id}/ats-score` calculates a deterministic ATS readiness score from saved resume JSON
 - `GET /api/resumes/{resume_id}/compare-ats-score` compares parsed and edited ATS readiness scores
 - Resume save and fetch endpoints accept optional `userId` ownership filtering
@@ -19,7 +19,7 @@ FastAPI service for extracting structured resume data from uploaded PDF, DOCX, o
 - LLM integration through OpenAI
 - OpenAI-backed resume text rephrasing with a dedicated prompt
 - Pydantic validation for the parsed resume profile
-- Stores parsed resume documents in MongoDB
+- Stores parsed and edited resume state in one MongoDB collection
 
 ## Project Structure
 
@@ -100,8 +100,7 @@ docker run --env-file .env -p 8000:8000 resume-parser-service
 | `OPENAI_MODEL` | OpenAI chat model |
 | `MONGO_URI` | MongoDB connection URI; `MONGODB_URI` and `MONGO_URL` are also accepted |
 | `MONGO_DATABASE` | MongoDB database name; `MONGO_DB` and `MONGODB_DATABASE` are also accepted |
-| `MONGO_COLLECTION` | Collection for parsed resume documents; `MONGODB_RESUME_COLLECTION` is also accepted |
-| `MONGO_EDITED_COLLECTION` | Collection for edited resume documents; `MONGODB_EDITED_RESUME_COLLECTION` is also accepted |
+| `MONGO_COLLECTION` | Collection for all resume documents, default `parsed_resumes`; `MONGODB_RESUME_COLLECTION` is also accepted |
 
 ## Railway Deployment
 
@@ -112,8 +111,7 @@ OPENAI_API_KEY=...
 LLM_PROVIDER=openai
 MONGO_URI=...
 MONGO_DATABASE=resume_parser
-MONGO_COLLECTION=parsed_resume
-MONGO_EDITED_COLLECTION=edited_resumes
+MONGO_COLLECTION=parsed_resumes
 PUBLIC_API_BASE_URL=https://resume-parser-api-staging.up.railway.app
 RESUME_IMAGE_STORAGE_BACKEND=s3
 S3_ENDPOINT_URL=https://t3.storageapi.dev
@@ -199,6 +197,11 @@ curl "http://localhost:8000/api/resumes/{resumeId}/compare-ats-score"
 ```
 
 The `source` query parameter accepts `parsed` or `edited` and defaults to `edited`.
+
+Each document in `parsed_resumes` keeps the original parsed `profile` and, after an edit, an embedded
+`editedResume` snapshot. The snapshot contains `atsScore`, the complete `atsCalculation`, and
+`atsCalculatedAt`. These fields are refreshed when an edited resume is saved or when the ATS score endpoint
+runs with `source=edited`. No separate edited or template collection is required.
 
 This score is an ATS readiness / resume optimization score based on deterministic product rules. It is not an official score from Workday, Taleo, Greenhouse, Lever, or any other ATS vendor.
 

@@ -94,26 +94,75 @@ class AtsScoreServiceTests(unittest.TestCase):
 
 
 class AtsRepositoryTests(unittest.IsolatedAsyncioTestCase):
-    async def test_get_resume_by_id_reads_edited_collection_for_edited_source(self) -> None:
+    async def test_save_ats_calculation_updates_embedded_edited_resume(self) -> None:
+        repository = MongoResumeRepository.__new__(MongoResumeRepository)
+        repository.database_name = "resume_parser"
+        repository.collection_name = "parsed_resumes"
+        repository.collection = unittest.mock.Mock()
+        repository.collection.find_one = AsyncMock(
+            return_value={
+                "_id": "parsed-mongo-id",
+                "resumeId": "resume123",
+                "userId": "user-123",
+                "editedResume": {"profile": build_strong_resume()},
+            }
+        )
+        repository.collection.update_one = AsyncMock(
+            return_value=unittest.mock.Mock(matched_count=1)
+        )
+        calculation = calculate_ats_score(build_strong_resume())
+
+        stored = await repository.save_ats_calculation(
+            "resume123",
+            calculation,
+            user_id=" user-123 ",
+        )
+
+        self.assertTrue(stored)
+        repository.collection.find_one.assert_awaited_once_with(
+            {
+                "$and": [
+                    {"$or": [{"resumeId": "resume123"}]},
+                    {"userId": "user-123"},
+                ]
+            }
+        )
+        update_filter = repository.collection.update_one.await_args.args[0]
+        update_document = repository.collection.update_one.await_args.args[1]
+        self.assertEqual(update_filter, {"_id": "parsed-mongo-id"})
+        self.assertEqual(
+            update_document["$set"]["editedResume.atsScore"],
+            calculation["atsScore"],
+        )
+        self.assertEqual(
+            update_document["$set"]["editedResume.atsCalculation"],
+            calculation,
+        )
+        self.assertIn("editedResume.atsCalculatedAt", update_document["$set"])
+
+    async def test_get_resume_by_id_reads_embedded_edit_for_edited_source(self) -> None:
         repository = MongoResumeRepository.__new__(MongoResumeRepository)
         repository.collection = unittest.mock.Mock()
-        repository.edited_collection = unittest.mock.Mock()
-        repository.edited_collection.find_one = AsyncMock(return_value={"resumeId": "resume123"})
+        edited_resume = {"resumeId": "resume123", "profile": build_strong_resume()}
+        repository.collection.find_one = AsyncMock(
+            return_value={
+                "resumeId": "resume123",
+                "profile": {"data": {"name": "Original"}},
+                "editedResume": edited_resume,
+            }
+        )
 
         document = await repository.get_resume_by_id("resume123", "edited")
 
-        self.assertEqual(document, {"resumeId": "resume123"})
-        repository.edited_collection.find_one.assert_awaited_once_with(
-            {"$or": [{"resumeId": "resume123"}, {"id": "resume123"}]},
-            sort=[("updatedAt", -1)],
+        self.assertEqual(document, edited_resume)
+        repository.collection.find_one.assert_awaited_once_with(
+            {"$or": [{"resumeId": "resume123"}, {"id": "resume123"}]}
         )
 
     async def test_get_resume_by_id_edited_source_falls_back_to_main_collection_with_user_id(self) -> None:
         repository = MongoResumeRepository.__new__(MongoResumeRepository)
         repository.collection = unittest.mock.Mock()
-        repository.edited_collection = unittest.mock.Mock()
         original_resume = {"resumeId": "resume123", "userId": "user-123"}
-        repository.edited_collection.find_one = AsyncMock(return_value=None)
         repository.collection.find_one = AsyncMock(return_value=original_resume)
 
         document = await repository.get_resume_by_id("resume123", "edited", user_id=" user-123 ")
@@ -125,46 +174,26 @@ class AtsRepositoryTests(unittest.IsolatedAsyncioTestCase):
             ]
         }
         self.assertEqual(document, original_resume)
-        repository.edited_collection.find_one.assert_awaited_once_with(
-            expected_query,
-            sort=[("updatedAt", -1)],
-        )
         repository.collection.find_one.assert_awaited_once_with(expected_query)
 
-    async def test_get_resume_by_id_edited_source_resolves_stable_id_from_main_collection(self) -> None:
+    async def test_get_parsed_and_edited_resume_returns_embedded_snapshot(self) -> None:
         repository = MongoResumeRepository.__new__(MongoResumeRepository)
         repository.collection = unittest.mock.Mock()
-        repository.edited_collection = unittest.mock.Mock()
-        repository.collection.find_one = AsyncMock(return_value={"_id": "mongo-id", "resumeId": "stable-id"})
-        repository.edited_collection.find_one = AsyncMock(side_effect=[None, {"resumeId": "stable-id"}])
-
-        document = await repository.get_resume_by_id("mongo-id", "edited")
-
-        self.assertEqual(document, {"resumeId": "stable-id"})
-        self.assertEqual(repository.edited_collection.find_one.await_count, 2)
-        repository.edited_collection.find_one.assert_any_await(
-            {"$or": [{"resumeId": "mongo-id"}, {"id": "mongo-id"}]},
-            sort=[("updatedAt", -1)],
-        )
-        repository.edited_collection.find_one.assert_any_await(
-            {"$or": [{"resumeId": "stable-id"}, {"id": "stable-id"}]},
-            sort=[("updatedAt", -1)],
-        )
-
-    async def test_get_parsed_and_edited_resume_uses_stable_resume_id(self) -> None:
-        repository = MongoResumeRepository.__new__(MongoResumeRepository)
-        repository.collection = unittest.mock.Mock()
-        repository.edited_collection = unittest.mock.Mock()
-        repository.collection.find_one = AsyncMock(return_value={"_id": "mongo-id", "resumeId": "stable-id"})
-        repository.edited_collection.find_one = AsyncMock(return_value={"resumeId": "stable-id"})
+        edited_resume = {"resumeId": "stable-id", "profile": build_strong_resume()}
+        parsed_document = {
+            "_id": "mongo-id",
+            "resumeId": "stable-id",
+            "profile": {"data": {"name": "Original"}},
+            "editedResume": edited_resume,
+        }
+        repository.collection.find_one = AsyncMock(return_value=parsed_document)
 
         parsed_resume, edited_resume = await repository.get_parsed_and_edited_resume("mongo-id")
 
         self.assertEqual(parsed_resume["resumeId"], "stable-id")
         self.assertEqual(edited_resume["resumeId"], "stable-id")
-        repository.edited_collection.find_one.assert_awaited_once_with(
-            {"$or": [{"resumeId": "stable-id"}, {"id": "stable-id"}]},
-            sort=[("updatedAt", -1)],
+        repository.collection.find_one.assert_awaited_once_with(
+            {"$or": [{"resumeId": "mongo-id"}, {"id": "mongo-id"}]}
         )
 
 
@@ -174,6 +203,8 @@ class AtsEndpointTests(unittest.TestCase):
             def __init__(self) -> None:
                 self.requested_source: str | None = None
                 self.requested_user_id: str | None = None
+                self.stored_calculation: dict | None = None
+                self.stored_user_id: str | None = None
 
             async def get_resume_by_id(
                 self,
@@ -184,6 +215,16 @@ class AtsEndpointTests(unittest.TestCase):
                 self.requested_source = source
                 self.requested_user_id = user_id
                 return {"resumeId": resume_id, "profile": build_strong_resume()}
+
+            async def save_ats_calculation(
+                self,
+                resume_id: str,
+                calculation: dict,
+                user_id: str | None = None,
+            ) -> bool:
+                self.stored_calculation = calculation
+                self.stored_user_id = user_id
+                return True
 
         fake_repository = FakeRepository()
 
@@ -199,6 +240,13 @@ class AtsEndpointTests(unittest.TestCase):
         self.assertEqual(response.json()["resumeId"], "resume123")
         self.assertEqual(response.json()["source"], "edited")
         self.assertNotIn("jobMatchAnalysis", response.json())
+        self.assertEqual(fake_repository.stored_user_id, "user-123")
+        self.assertEqual(
+            fake_repository.stored_calculation["atsScore"],
+            response.json()["atsScore"],
+        )
+        self.assertNotIn("resumeId", fake_repository.stored_calculation)
+        self.assertNotIn("source", fake_repository.stored_calculation)
 
     def test_ats_score_endpoint_rejects_invalid_source_with_400(self) -> None:
         response = TestClient(app).get("/api/resumes/resume123/ats-score?source=raw")

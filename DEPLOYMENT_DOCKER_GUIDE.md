@@ -56,7 +56,7 @@ docker run -p 8000:8000 \
   -e OCR_DPI=200 \
   -e OPENAI_API_KEY=sk-... \
   -e MONGO_URI=mongodb://mongo:27017 \
-  -e MONGO_EDITED_COLLECTION=edited_resumes \
+  -e MONGO_COLLECTION=parsed_resumes \
   -e PUBLIC_API_BASE_URL=https://resume-parser-api-staging.up.railway.app \
   -e RESUME_IMAGE_STORAGE_BACKEND=s3 \
   -e S3_ENDPOINT_URL=https://t3.storageapi.dev \
@@ -102,7 +102,6 @@ services:
       MONGO_URI: mongodb://mongo:27017
       MONGO_DATABASE: resume_parser
       MONGO_COLLECTION: parsed_resumes
-      MONGO_EDITED_COLLECTION: edited_resumes
       
       # OCR Fallback Configuration
       OCR_FALLBACK_ENABLED: "true"

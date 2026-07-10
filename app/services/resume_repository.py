@@ -10,6 +10,7 @@ from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorCollection
 
 from app.core.config import Settings
 from app.models.resume_schema import ResumeProfile
+from app.services.ats_score_service import calculate_ats_score
 from app.services.resume_parser import normalize_resume_profile_payload
 
 logger = logging.getLogger(__name__)
@@ -34,11 +35,7 @@ class MongoResumeRepository:
         )
         self.database_name = settings.mongodb_database
         self.collection_name = settings.mongodb_resume_collection
-        self.edited_collection_name = settings.mongodb_edited_resume_collection
         self.collection: AsyncIOMotorCollection = self.client[self.database_name][self.collection_name]
-        self.edited_collection: AsyncIOMotorCollection = self.client[self.database_name][
-            self.edited_collection_name
-        ]
 
     async def initialize(self) -> None:
         await self.client.admin.command("ping")
@@ -48,9 +45,6 @@ class MongoResumeRepository:
         await self.collection.create_index([("userId", 1), ("createdAt", -1)])
         await self.collection.create_index("profile.data.email")
         await self.collection.create_index("metadata.filename")
-        await self.edited_collection.create_index("resumeId")
-        await self.edited_collection.create_index("userId")
-        await self.edited_collection.create_index("updatedAt")
 
     async def save(
         self,
@@ -107,9 +101,9 @@ class MongoResumeRepository:
             return None
 
         stable_resume_id = self._stable_resume_id(original)
-        edited = await self.edited_collection.find_one({"resumeId": stable_resume_id}, sort=[("updatedAt", -1)])
-        if edited is not None:
-            return self._to_response_document(edited, original=original, stable_resume_id=stable_resume_id)
+        edited_resume = self._edited_resume_snapshot(original)
+        if edited_resume is not None:
+            return self._to_response_document(edited_resume, original=original, stable_resume_id=stable_resume_id)
 
         return self._to_response_document(original, stable_resume_id=stable_resume_id)
 
@@ -124,31 +118,11 @@ class MongoResumeRepository:
         if normalized_source == "parsed":
             return await self._find_resume_document(self.collection, resume_id, user_id=user_id)
         if normalized_source == "edited":
-            edited_resume = await self._find_resume_document(
-                self.edited_collection,
-                resume_id,
-                sort=[("updatedAt", -1)],
-                user_id=user_id,
-            )
-            if edited_resume is not None:
-                return edited_resume
-
             original = await self._find_resume_document(self.collection, resume_id, user_id=user_id)
             if original is None:
                 return None
 
-            stable_resume_id = self._stable_resume_id(original)
-            if stable_resume_id != str(resume_id).strip():
-                edited_resume = await self._find_resume_document(
-                    self.edited_collection,
-                    stable_resume_id,
-                    sort=[("updatedAt", -1)],
-                    user_id=user_id,
-                )
-                if edited_resume is not None:
-                    return edited_resume
-
-            return original
+            return self._edited_resume_snapshot(original) or original
 
         raise ValueError("source must be either 'parsed' or 'edited'.")
 
@@ -159,20 +133,7 @@ class MongoResumeRepository:
     ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
         user_id = self._normalize_user_id(user_id)
         parsed_resume = await self.get_resume_by_id(resume_id, "parsed", user_id=user_id)
-        stable_resume_id = self._stable_resume_id(parsed_resume) if parsed_resume is not None else resume_id
-        edited_resume = await self._find_resume_document(
-            self.edited_collection,
-            stable_resume_id,
-            sort=[("updatedAt", -1)],
-            user_id=user_id,
-        )
-        if edited_resume is None and stable_resume_id != resume_id:
-            edited_resume = await self._find_resume_document(
-                self.edited_collection,
-                resume_id,
-                sort=[("updatedAt", -1)],
-                user_id=user_id,
-            )
+        edited_resume = self._edited_resume_snapshot(parsed_resume) if parsed_resume is not None else None
 
         return parsed_resume, edited_resume
 
@@ -192,51 +153,82 @@ class MongoResumeRepository:
         now = datetime.now(UTC)
         metadata = original.get("metadata") or {}
         source = original.get("source") or {}
-        avatar = original.get("avatar") or ""
-        with_photo = bool(original.get("withPhoto") or avatar)
+        existing_edit = self._edited_resume_snapshot(original) or {}
+        avatar = existing_edit.get("avatar") or original.get("avatar") or ""
+        with_photo = bool(existing_edit.get("withPhoto") or original.get("withPhoto") or avatar)
+        profile_document = profile.model_dump(mode="json")
+        ats_calculation = calculate_ats_score(profile_document)
 
-        updated_fields = {
+        edited_resume = {
             "resumeId": stable_resume_id,
             "version": 1,
             "status": "edited",
             "avatar": avatar,
             "withPhoto": with_photo,
-            "profile": profile.model_dump(mode="json"),
+            "profile": profile_document,
             "metadata": metadata,
             "source": {
                 "jobDescription": source.get("jobDescription"),
                 "createdFrom": "edit",
                 "originalResumeId": stable_resume_id,
             },
+            **self._ats_storage_fields(ats_calculation, calculated_at=now),
+            "createdAt": existing_edit.get("createdAt") or now,
             "updatedAt": now,
         }
         if owner_user_id:
-            updated_fields["userId"] = owner_user_id
+            edited_resume["userId"] = owner_user_id
 
-        await self.edited_collection.update_one(
-            {"resumeId": stable_resume_id},
-            {
-                "$set": updated_fields,
-                "$setOnInsert": {
-                    "_id": ObjectId(),
-                    "createdAt": now,
-                },
-            },
-            upsert=True,
+        await self.collection.update_one(
+            {"_id": original["_id"]},
+            {"$set": {"editedResume": edited_resume, "updatedAt": now}},
         )
 
-        edited = await self.edited_collection.find_one({"resumeId": stable_resume_id}, sort=[("updatedAt", -1)])
-        if edited is None:
-            raise RuntimeError("Edited resume upsert completed but the saved document could not be read.")
-
         logger.info(
-            "Saved edited resume to MongoDB database=%r collection=%r resume_id=%s user_id=%s",
+            "Saved edited resume snapshot to MongoDB database=%r collection=%r resume_id=%s user_id=%s",
             self.database_name,
-            self.edited_collection_name,
+            self.collection_name,
             stable_resume_id,
             owner_user_id,
         )
-        return self._to_response_document(edited, original=original, stable_resume_id=stable_resume_id)
+        return self._to_response_document(edited_resume, original=original, stable_resume_id=stable_resume_id)
+
+    async def save_ats_calculation(
+        self,
+        resume_id: str,
+        calculation: dict[str, Any],
+        user_id: str | None = None,
+    ) -> bool:
+        """Store an ATS calculation on an embedded edited resume snapshot."""
+        user_id = self._normalize_user_id(user_id)
+        original = await self._find_original(resume_id, user_id=user_id)
+        if original is None or self._edited_resume_snapshot(original) is None:
+            return False
+
+        now = datetime.now(UTC)
+        ats_fields = self._ats_storage_fields(calculation, calculated_at=now)
+        update_fields = {
+            f"editedResume.{field_name}": value
+            for field_name, value in ats_fields.items()
+        }
+        update_fields["editedResume.updatedAt"] = now
+        update_fields["updatedAt"] = now
+        result = await self.collection.update_one(
+            {"_id": original["_id"]},
+            {
+                "$set": update_fields,
+            },
+        )
+        stored = bool(getattr(result, "matched_count", 0))
+        if stored:
+            logger.info(
+                "Saved ATS calculation to MongoDB database=%r collection=%r resume_id=%s user_id=%s",
+                self.database_name,
+                self.collection_name,
+                self._stable_resume_id(original),
+                user_id,
+            )
+        return stored
 
     async def save_image(
         self,
@@ -262,8 +254,17 @@ class MongoResumeRepository:
         if owner_user_id:
             image_update["userId"] = owner_user_id
 
+        if self._edited_resume_snapshot(original) is not None:
+            image_update.update(
+                {
+                    "editedResume.avatar": image_url,
+                    "editedResume.withPhoto": True,
+                    "editedResume.image": image_metadata,
+                    "editedResume.updatedAt": now,
+                }
+            )
+
         await self.collection.update_one({"_id": original["_id"]}, {"$set": image_update})
-        await self.edited_collection.update_one({"resumeId": stable_resume_id}, {"$set": image_update})
 
         updated = await self.get(stable_resume_id, user_id=owner_user_id)
         if updated is None:
@@ -293,7 +294,6 @@ class MongoResumeRepository:
         self,
         collection: AsyncIOMotorCollection,
         resume_id: str,
-        sort: list[tuple[str, int]] | None = None,
         user_id: str | None = None,
     ) -> dict[str, Any] | None:
         normalized_resume_id = str(resume_id).strip()
@@ -310,14 +310,11 @@ class MongoResumeRepository:
         id_filter: dict[str, Any] = {"$or": filters}
         user_id = self._normalize_user_id(user_id)
         query = {"$and": [id_filter, {"userId": user_id}]} if user_id else id_filter
-        if sort is not None:
-            return await collection.find_one(query, sort=sort)
-
         return await collection.find_one(query)
 
     @staticmethod
     def _stable_resume_id(document: dict[str, Any]) -> str:
-        resume_id = document.get("resumeId")
+        resume_id = document.get("resumeId") or document.get("id")
         if resume_id:
             return str(resume_id)
         return str(document["_id"])
@@ -333,6 +330,38 @@ class MongoResumeRepository:
     @staticmethod
     def _document_user_id(document: dict[str, Any]) -> str | None:
         return MongoResumeRepository._normalize_user_id(document.get("userId"))
+
+    @staticmethod
+    def _edited_resume_snapshot(document: dict[str, Any]) -> dict[str, Any] | None:
+        edited_resume = document.get("editedResume")
+        if isinstance(edited_resume, dict) and edited_resume.get("profile"):
+            return edited_resume
+        return None
+
+    @staticmethod
+    def _ats_storage_fields(
+        calculation: dict[str, Any],
+        *,
+        calculated_at: datetime,
+    ) -> dict[str, Any]:
+        if not isinstance(calculation, dict):
+            raise TypeError("ATS calculation must be a dictionary.")
+
+        score = calculation.get("atsScore")
+        if isinstance(score, bool) or not isinstance(score, (int, float)):
+            raise ValueError("ATS calculation must include a numeric atsScore.")
+
+        numeric_score = int(score)
+        if numeric_score < 0 or numeric_score > 100:
+            raise ValueError("ATS calculation atsScore must be between 0 and 100.")
+
+        stored_calculation = deepcopy(calculation)
+        stored_calculation["atsScore"] = numeric_score
+        return {
+            "atsScore": numeric_score,
+            "atsCalculation": stored_calculation,
+            "atsCalculatedAt": calculated_at,
+        }
 
     @classmethod
     def _to_response_document(

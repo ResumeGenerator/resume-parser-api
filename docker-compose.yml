@@ -12,7 +12,6 @@ services:
       MONGO_URI: mongodb://resume-parser-mongo:27017
       MONGO_DATABASE: resume_parser
       MONGO_COLLECTION: parsed_resumes
-      MONGO_EDITED_COLLECTION: edited_resumes
     ports:
       - "8000:8000"
     depends_on:

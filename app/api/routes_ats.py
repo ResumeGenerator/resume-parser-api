@@ -23,6 +23,7 @@ async def get_ats_score(
     settings: Settings = Depends(get_settings),
 ) -> AtsScoreResponse:
     normalized_source = source.strip().casefold()
+    normalized_user_id = _normalize_user_id(userId)
     if normalized_source not in ALLOWED_SOURCES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -34,7 +35,7 @@ async def get_ats_score(
         resume_document = await repository.get_resume_by_id(
             resumeId,
             normalized_source,
-            user_id=_normalize_user_id(userId),
+            user_id=normalized_user_id,
         )
     except ResumeRepositoryNotConfiguredError as exc:
         raise HTTPException(
@@ -63,13 +64,36 @@ async def get_ats_score(
             detail="Failed to calculate ATS score.",
         ) from exc
 
-    return AtsScoreResponse.model_validate(
+    response = AtsScoreResponse.model_validate(
         {
             "resumeId": _stable_resume_id(resume_document, resumeId),
             "source": normalized_source,
             **result,
         }
     )
+
+    if normalized_source == "edited":
+        try:
+            stored = await repository.save_ats_calculation(
+                resumeId,
+                response.model_dump(exclude={"resumeId", "source"}),
+                user_id=normalized_user_id,
+            )
+        except Exception as exc:
+            logger.exception("Failed to store the edited resume ATS calculation.")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="ATS score was calculated but could not be stored on the edited resume.",
+            ) from exc
+
+        if not stored:
+            logger.info(
+                "ATS score was calculated but no edited resume document exists to store it: resume_id=%s user_id=%s",
+                resumeId,
+                normalized_user_id,
+            )
+
+    return response
 
 
 @router.get("/{resumeId}/compare-ats-score", response_model=CompareAtsScoreResponse)
