@@ -7,9 +7,7 @@ FastAPI service for extracting structured resume data from uploaded PDF, DOCX, o
 - `POST /api/resumes/parse` accepts `multipart/form-data`
 - `POST /api/resumes/{resume_id}/image` uploads a resume photo and stores its URL
 - `POST /api/resumes/rephrase` accepts text and returns resume-ready rephrasing
-- `POST /api/resumes/{resume_id}/edits` saves the latest edited profile inside its parsed resume document
 - `GET /api/resumes/{resume_id}/ats-score` calculates a deterministic ATS readiness score from saved resume JSON
-- `GET /api/resumes/{resume_id}/compare-ats-score` compares parsed and edited ATS readiness scores
 - Resume save and fetch endpoints accept optional `userId` ownership filtering
 - Supports `.pdf`, `.docx`, and `.txt`
 - Configurable max upload size through `MAX_FILE_SIZE_MB`
@@ -19,7 +17,7 @@ FastAPI service for extracting structured resume data from uploaded PDF, DOCX, o
 - LLM integration through OpenAI
 - OpenAI-backed resume text rephrasing with a dedicated prompt
 - Pydantic validation for the parsed resume profile
-- Stores parsed and edited resume state in one MongoDB collection
+- Stores parsed resume state in one MongoDB collection
 
 ## Project Structure
 
@@ -100,7 +98,7 @@ docker run --env-file .env -p 8000:8000 resume-parser-service
 | `OPENAI_MODEL` | OpenAI chat model |
 | `MONGO_URI` | MongoDB connection URI; `MONGODB_URI` and `MONGO_URL` are also accepted |
 | `MONGO_DATABASE` | MongoDB database name; `MONGO_DB` and `MONGODB_DATABASE` are also accepted |
-| `MONGO_COLLECTION` | Collection for all resume documents, default `parsed_resumes`; `MONGODB_RESUME_COLLECTION` is also accepted |
+| `MONGO_COLLECTION` | Collection for parsed resume documents, default `parsed_resumes`; `MONGODB_RESUME_COLLECTION` is also accepted |
 
 ## Railway Deployment
 
@@ -139,7 +137,7 @@ curl -X POST "http://localhost:8000/api/resumes/parse" \
   -F "jobDescription=Senior Python Backend Engineer with FastAPI, cloud, Docker, and LLM integration experience."
 ```
 
-Use `userId` as a multipart field when parsing a resume. For fetch/update operations, pass it as a query parameter, for example `GET /api/resumes?userId=user-123`, `GET /api/resumes/{resume_id}?userId=user-123`, or `POST /api/resumes/{resume_id}/edits?userId=user-123`.
+Use `userId` as a multipart field when parsing a resume. For fetch operations, pass it as a query parameter, for example `GET /api/resumes?userId=user-123` or `GET /api/resumes/{resume_id}?userId=user-123`.
 
 ## Rephrase Resume Text
 
@@ -187,21 +185,10 @@ The endpoint is intended for work experience bullets and professional summary te
 Calculate an ATS readiness / resume optimization score from an already saved MongoDB resume JSON document. This endpoint does not upload, reparse, regenerate, or call an LLM.
 
 ```bash
-curl "http://localhost:8000/api/resumes/{resumeId}/ats-score?source=edited"
+curl "http://localhost:8000/api/resumes/{resumeId}/ats-score"
 ```
 
-Compare the original parsed resume with the latest edited resume:
-
-```bash
-curl "http://localhost:8000/api/resumes/{resumeId}/compare-ats-score"
-```
-
-The `source` query parameter accepts `parsed` or `edited` and defaults to `edited`.
-
-Each document in `parsed_resumes` keeps the original parsed `profile` and, after an edit, an embedded
-`editedResume` snapshot. The snapshot contains `atsScore`, the complete `atsCalculation`, and
-`atsCalculatedAt`. These fields are refreshed when an edited resume is saved or when the ATS score endpoint
-runs with `source=edited`. No separate edited or template collection is required.
+The endpoint reads only from the configured parsed-resume collection. The optional `source` query parameter accepts only `parsed` and defaults to `parsed`. ATS scoring is read-only and does not persist calculation snapshots.
 
 This score is an ATS readiness / resume optimization score based on deterministic product rules. It is not an official score from Workday, Taleo, Greenhouse, Lever, or any other ATS vendor.
 

@@ -5,20 +5,20 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.config import Settings, get_settings
 from app.core.database import get_resume_repository
-from app.models.ats_schema import AtsScoreResponse, CompareAtsScoreResponse
-from app.services.ats_score_service import calculate_ats_score, compare_ats_scores
+from app.models.ats_schema import AtsScoreResponse
+from app.services.ats_score_service import calculate_ats_score
 from app.services.resume_repository import ResumeRepositoryNotConfiguredError
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/resumes", tags=["ats"])
-ALLOWED_SOURCES = {"parsed", "edited"}
+ALLOWED_SOURCES = {"parsed"}
 
 
 @router.get("/{resumeId}/ats-score", response_model=AtsScoreResponse)
 async def get_ats_score(
     resumeId: str,
-    source: str = Query(default="edited"),
+    source: str = Query(default="parsed"),
     userId: str | None = Query(default=None),
     settings: Settings = Depends(get_settings),
 ) -> AtsScoreResponse:
@@ -27,16 +27,12 @@ async def get_ats_score(
     if normalized_source not in ALLOWED_SOURCES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="source must be either 'parsed' or 'edited'.",
+            detail="source must be 'parsed'.",
         )
 
     try:
         repository = get_resume_repository(settings)
-        resume_document = await repository.get_resume_by_id(
-            resumeId,
-            normalized_source,
-            user_id=normalized_user_id,
-        )
+        resume_document = await repository.get(resumeId, user_id=normalized_user_id)
     except ResumeRepositoryNotConfiguredError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -72,78 +68,7 @@ async def get_ats_score(
         }
     )
 
-    if normalized_source == "edited":
-        try:
-            stored = await repository.save_ats_calculation(
-                resumeId,
-                response.model_dump(exclude={"resumeId", "source"}),
-                user_id=normalized_user_id,
-            )
-        except Exception as exc:
-            logger.exception("Failed to store the edited resume ATS calculation.")
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="ATS score was calculated but could not be stored on the edited resume.",
-            ) from exc
-
-        if not stored:
-            logger.info(
-                "ATS score was calculated but no edited resume document exists to store it: resume_id=%s user_id=%s",
-                resumeId,
-                normalized_user_id,
-            )
-
     return response
-
-
-@router.get("/{resumeId}/compare-ats-score", response_model=CompareAtsScoreResponse)
-async def compare_resume_ats_score(
-    resumeId: str,
-    userId: str | None = Query(default=None),
-    settings: Settings = Depends(get_settings),
-) -> CompareAtsScoreResponse:
-    try:
-        repository = get_resume_repository(settings)
-        parsed_resume, edited_resume = await repository.get_parsed_and_edited_resume(
-            resumeId,
-            user_id=_normalize_user_id(userId),
-        )
-    except ResumeRepositoryNotConfiguredError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=str(exc),
-        ) from exc
-    except Exception as exc:
-        logger.exception("Failed to fetch resumes before ATS comparison.")
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="MongoDB is configured but failed to fetch resumes for ATS comparison.",
-        ) from exc
-
-    if parsed_resume is None or edited_resume is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Parsed and edited resumes are required for ATS score comparison.",
-        )
-
-    try:
-        result = compare_ats_scores(
-            _resume_content_for_scoring(parsed_resume),
-            _resume_content_for_scoring(edited_resume),
-        )
-    except Exception as exc:
-        logger.exception("Failed to compare ATS scores.")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to compare ATS scores.",
-        ) from exc
-
-    return CompareAtsScoreResponse.model_validate(
-        {
-            "resumeId": _stable_resume_id(parsed_resume, resumeId),
-            **result,
-        }
-    )
 
 
 def _resume_content_for_scoring(document: dict[str, Any]) -> dict[str, Any]:

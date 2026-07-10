@@ -318,34 +318,6 @@ async def read_rephrase_request(request: Request) -> ResumeRephraseRequest:
         ) from exc
 
 
-async def read_resume_profile_request(request: Request) -> ResumeProfile:
-    body = await request.body()
-    try:
-        payload_data: Any = json.loads(body.decode("utf-8"), strict=False)
-    except UnicodeDecodeError as exc:
-        raise HTTPException(
-            status_code=HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="Request body must be UTF-8 encoded.",
-        ) from exc
-    except json.JSONDecodeError as exc:
-        raise HTTPException(
-            status_code=HTTP_422_UNPROCESSABLE_CONTENT,
-            detail={
-                "message": "Request body must be a JSON object containing a resume profile.",
-                "error": exc.msg,
-                "position": exc.pos,
-            },
-        ) from exc
-
-    try:
-        return ResumeProfile.model_validate(normalize_resume_profile_payload(payload_data))
-    except ValidationError as exc:
-        raise HTTPException(
-            status_code=HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=exc.errors(),
-        ) from exc
-
-
 @router.post("/parse", response_model=ResumeParseResponse)
 async def parse_resume(
     file: UploadFile = File(...),
@@ -548,36 +520,6 @@ async def upload_resume_image(
         ) from exc
 
     return build_resume_image_response(existing_document, image_url)
-
-
-@router.post("/{resume_id}/edits", response_model=ResumeParseResponse)
-async def save_edited_resume(
-    resume_id: str,
-    request: Request,
-    userId: str | None = Query(default=None),
-    settings: Settings = Depends(get_settings),
-) -> ResumeParseResponse:
-    profile = await read_resume_profile_request(request)
-
-    try:
-        repository = get_resume_repository(settings)
-        return await repository.save_edited(resume_id, profile, user_id=normalize_user_id(userId))
-    except ResumeNotFoundError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(exc),
-        ) from exc
-    except ResumeRepositoryNotConfiguredError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=str(exc),
-        ) from exc
-    except Exception as exc:
-        logger.exception("Failed to save edited resume to MongoDB.")
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="MongoDB is configured but failed to save the edited resume.",
-        ) from exc
 
 
 @router.post(

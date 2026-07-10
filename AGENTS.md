@@ -23,7 +23,7 @@ The parsed output is intentionally shaped for a downstream resume generation UI/
 ## Important Entry Points
 
 - `app/main.py`: FastAPI app construction, CORS, lifespan startup/shutdown, health routes, router registration.
-- `app/api/routes_resume.py`: HTTP API for parsing, listing, fetching, and saving edited resumes.
+- `app/api/routes_resume.py`: HTTP API for parsing, listing, fetching, and updating resume images.
 - `app/core/config.py`: environment-backed settings and aliases.
 - `app/core/llm_client.py`: LLM abstraction and OpenAI chat-completions implementation.
 - `app/core/resume_prompt.py`: prompt contract for structured resume extraction.
@@ -48,8 +48,7 @@ The parsed output is intentionally shaped for a downstream resume generation UI/
   - Persists the parsed profile before returning.
 - `GET /api/resumes`: list saved resume summaries.
   - Query params: `limit` from 1 to 500, `skip` >= 0.
-- `GET /api/resumes/{resume_id}`: fetch a parsed resume. If an edited copy exists, it returns the latest edited profile while keeping the original stable ID.
-- `POST /api/resumes/{resume_id}/edits`: save an edited copy of a parsed resume.
+- `GET /api/resumes/{resume_id}`: fetch a parsed resume by its stable ID.
 
 ## Runtime Configuration
 
@@ -121,7 +120,7 @@ Note: `docker-compose.yml` expects the external Docker network `resume-parser-de
 - Do not bypass `read_and_validate_file`, `DocumentTextExtractor`, or `validate_resume_document` in the parse flow.
 - Do not introduce database writes before validation succeeds.
 - Keep Mongo serialization JSON-safe. Convert `ObjectId` and `datetime` values before returning API responses.
-- Preserve the stable ID behavior for edited resumes unless explicitly asked to change it.
+- Preserve stable parsed-resume IDs unless explicitly asked to change them.
 - Avoid adding broad dependencies. Prefer small standard-library or existing-stack solutions.
 
 ## Testing Expectations

@@ -138,7 +138,7 @@ jobs:
             2. Implement the smallest safe change.
             3. Preserve the FastAPI route contracts and strict Pydantic response models.
             4. Treat LLM output as untrusted; validate and normalize before returning or storing.
-            5. Keep MongoDB serialization JSON-safe and preserve stable ID behavior for edited resumes.
+            5. Keep MongoDB serialization JSON-safe and preserve stable parsed-resume IDs.
             6. Add or update focused unittest tests when behavior changes.
             7. Run python -m unittest discover -s tests when feasible.
             8. Leave a concise final summary with verification results.

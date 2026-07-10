@@ -20,7 +20,7 @@ class AtsScoreBreakdown(StrictAtsModel):
 
 class AtsScoreResponse(StrictAtsModel):
     resumeId: str
-    source: Literal["parsed", "edited"]
+    source: Literal["parsed"]
     atsScore: int = Field(ge=0, le=100)
     scoreLevel: str
     summary: str
@@ -31,17 +31,3 @@ class AtsScoreResponse(StrictAtsModel):
     keywordGaps: list[str] = Field(default_factory=list)
     formattingRisks: list[str] = Field(default_factory=list)
     improvementSuggestions: list[str] = Field(default_factory=list)
-
-
-class AtsScoreSummary(StrictAtsModel):
-    atsScore: int = Field(ge=0, le=100)
-    scoreLevel: str
-
-
-class CompareAtsScoreResponse(StrictAtsModel):
-    resumeId: str
-    originalResume: AtsScoreSummary
-    editedResume: AtsScoreSummary
-    improvement: int
-    summary: str
-    remainingSuggestions: list[str] = Field(default_factory=list)

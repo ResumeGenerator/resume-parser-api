@@ -608,63 +608,28 @@ class MongoResumeRepositoryTests(unittest.IsolatedAsyncioTestCase):
             }
         )
 
-    async def test_save_edited_embeds_snapshot_in_parsed_resume(self) -> None:
+    async def test_get_returns_parsed_resume_document(self) -> None:
         repository = MongoResumeRepository.__new__(MongoResumeRepository)
-        repository.database_name = "resume_parser"
-        repository.collection_name = "parsed_resumes"
         repository.collection = unittest.mock.Mock()
-
-        original_id = ObjectId()
-        original_document = {
-            "_id": original_id,
-            "resumeId": str(original_id),
-            "version": 1,
-            "status": "parsed",
-            "profile": {"data": {"name": "Alex Morgan", "sections": []}},
-            "metadata": {"filename": "alex.pdf"},
-            "source": {"jobDescription": "Python backend engineer"},
-        }
-
-        repository.collection.find_one = AsyncMock(return_value=original_document)
-        repository.collection.update_one = AsyncMock(
-            return_value=unittest.mock.Mock(matched_count=1, modified_count=1)
-        )
-
-        profile = ResumeProfile.model_validate(
-            {
-                "data": {
-                    "name": "Alex Morgan",
-                    "title": "Principal Engineer",
-                    "sections": [],
-                }
+        repository.collection.find_one = AsyncMock(
+            return_value={
+                "_id": ObjectId(),
+                "resumeId": "resume123",
+                "version": 1,
+                "status": "parsed",
+                "profile": {"data": {"name": "Alex Morgan", "sections": []}},
+                "metadata": {"filename": "alex.pdf"},
             }
         )
 
-        saved_document = await repository.save_edited(str(original_id), profile)
+        document = await repository.get("resume123")
 
-        repository.collection.update_one.assert_awaited_once()
-        filter_document = repository.collection.update_one.await_args.args[0]
-        update_document = repository.collection.update_one.await_args.args[1]
-        self.assertEqual(filter_document, {"_id": original_id})
-        edited_resume = update_document["$set"]["editedResume"]
-        self.assertEqual(edited_resume["version"], 1)
-        self.assertEqual(edited_resume["status"], "edited")
-        self.assertEqual(edited_resume["avatar"], "")
-        self.assertFalse(edited_resume["withPhoto"])
-        self.assertIsInstance(edited_resume["atsScore"], int)
-        self.assertEqual(
-            edited_resume["atsCalculation"]["atsScore"],
-            edited_resume["atsScore"],
-        )
-        self.assertIn("atsCalculatedAt", edited_resume)
-        self.assertEqual(saved_document["id"], str(original_id))
-        self.assertEqual(saved_document["resumeId"], str(original_id))
-        self.assertEqual(saved_document["version"], 1)
-        self.assertEqual(saved_document["status"], "edited")
-        self.assertEqual(saved_document["metadata"], {"filename": "alex.pdf"})
-        self.assertEqual(saved_document["profile"]["data"]["title"], "Principal Engineer")
+        self.assertIsNotNone(document)
+        self.assertEqual(document["resumeId"], "resume123")
+        self.assertEqual(document["status"], "parsed")
+        self.assertEqual(document["profile"]["data"]["name"], "Alex Morgan")
 
-    async def test_save_image_updates_parsed_document_and_embedded_edit(self) -> None:
+    async def test_save_image_updates_parsed_document(self) -> None:
         repository = MongoResumeRepository.__new__(MongoResumeRepository)
         repository.database_name = "resume_parser"
         repository.collection = unittest.mock.Mock()
@@ -678,23 +643,12 @@ class MongoResumeRepositoryTests(unittest.IsolatedAsyncioTestCase):
             "status": "parsed",
             "profile": {"data": {"name": "Alex Morgan", "sections": []}},
             "metadata": {"filename": "alex.pdf"},
-            "editedResume": {
-                "resumeId": resume_id,
-                "status": "edited",
-                "profile": {"data": {"name": "Edited Alex", "sections": []}},
-            },
         }
         updated_document = {
             **original_document,
             "avatar": "https://api.example.com/api/resumes/images/avatar.png",
             "withPhoto": True,
             "image": {"filename": "avatar.png"},
-            "editedResume": {
-                **original_document["editedResume"],
-                "avatar": "https://api.example.com/api/resumes/images/avatar.png",
-                "withPhoto": True,
-                "image": {"filename": "avatar.png"},
-            },
         }
 
         repository.collection.find_one = AsyncMock(side_effect=[original_document, updated_document])
@@ -711,11 +665,7 @@ class MongoResumeRepositoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(collection_filter, {"_id": original_id})
         self.assertEqual(collection_update["$set"]["avatar"], "https://api.example.com/api/resumes/images/avatar.png")
         self.assertTrue(collection_update["$set"]["withPhoto"])
-        self.assertEqual(
-            collection_update["$set"]["editedResume.avatar"],
-            "https://api.example.com/api/resumes/images/avatar.png",
-        )
-        self.assertTrue(collection_update["$set"]["editedResume.withPhoto"])
+        self.assertEqual(set(collection_update["$set"]), {"avatar", "withPhoto", "image", "updatedAt"})
         self.assertEqual(response_document["avatar"], "https://api.example.com/api/resumes/images/avatar.png")
         self.assertTrue(response_document["withPhoto"])
 

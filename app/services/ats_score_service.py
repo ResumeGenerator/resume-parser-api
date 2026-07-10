@@ -258,37 +258,6 @@ def calculate_ats_score(resume_json: dict, job_description: str | None = None) -
     return result
 
 
-def compare_ats_scores(
-    parsed_resume_json: dict,
-    edited_resume_json: dict,
-    job_description: str | None = None,
-) -> dict:
-    original_score = calculate_ats_score(parsed_resume_json, job_description)
-    edited_score = calculate_ats_score(edited_resume_json, job_description)
-    improvement = edited_score["atsScore"] - original_score["atsScore"]
-
-    if improvement > 0:
-        summary = f"Edited resume improved ATS readiness by {improvement} points."
-    elif improvement < 0:
-        summary = f"Edited resume reduced ATS readiness by {abs(improvement)} points."
-    else:
-        summary = "Edited resume has the same ATS readiness score as the original resume."
-
-    return {
-        "originalResume": {
-            "atsScore": original_score["atsScore"],
-            "scoreLevel": original_score["scoreLevel"],
-        },
-        "editedResume": {
-            "atsScore": edited_score["atsScore"],
-            "scoreLevel": edited_score["scoreLevel"],
-        },
-        "improvement": improvement,
-        "summary": summary,
-        "remainingSuggestions": edited_score["improvementSuggestions"],
-    }
-
-
 def resume_json_to_text(data: dict) -> str:
     parts: list[str] = []
     _collect_text_parts(data, parts)
