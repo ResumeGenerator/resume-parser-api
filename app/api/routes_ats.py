@@ -68,6 +68,25 @@ async def get_ats_score(
         }
     )
 
+    try:
+        stored = await repository.save_ats_calculation(
+            resumeId,
+            response.model_dump(exclude={"resumeId", "source"}),
+            user_id=normalized_user_id,
+        )
+    except Exception as exc:
+        logger.exception("Failed to store the parsed resume ATS calculation.")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="ATS score was calculated but could not be stored on the parsed resume.",
+        ) from exc
+
+    if not stored:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Resume was not found while storing the ATS calculation.",
+        )
+
     return response
 
 

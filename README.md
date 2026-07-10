@@ -7,6 +7,7 @@ FastAPI service for extracting structured resume data from uploaded PDF, DOCX, o
 - `POST /api/resumes/parse` accepts `multipart/form-data`
 - `POST /api/resumes/{resume_id}/image` uploads a resume photo and stores its URL
 - `POST /api/resumes/rephrase` accepts text and returns resume-ready rephrasing
+- `POST /api/resumes/{resume_id}/edits` updates the existing document in `parsed_resumes`
 - `GET /api/resumes/{resume_id}/ats-score` calculates a deterministic ATS readiness score from saved resume JSON
 - Resume save and fetch endpoints accept optional `userId` ownership filtering
 - Supports `.pdf`, `.docx`, and `.txt`
@@ -137,7 +138,7 @@ curl -X POST "http://localhost:8000/api/resumes/parse" \
   -F "jobDescription=Senior Python Backend Engineer with FastAPI, cloud, Docker, and LLM integration experience."
 ```
 
-Use `userId` as a multipart field when parsing a resume. For fetch operations, pass it as a query parameter, for example `GET /api/resumes?userId=user-123` or `GET /api/resumes/{resume_id}?userId=user-123`.
+Use `userId` as a multipart field when parsing a resume. For fetch/update operations, pass it as a query parameter, for example `GET /api/resumes?userId=user-123`, `GET /api/resumes/{resume_id}?userId=user-123`, or `POST /api/resumes/{resume_id}/edits?userId=user-123`.
 
 ## Rephrase Resume Text
 
@@ -188,7 +189,9 @@ Calculate an ATS readiness / resume optimization score from an already saved Mon
 curl "http://localhost:8000/api/resumes/{resumeId}/ats-score"
 ```
 
-The endpoint reads only from the configured parsed-resume collection. The optional `source` query parameter accepts only `parsed` and defaults to `parsed`. ATS scoring is read-only and does not persist calculation snapshots.
+The endpoint reads only from the configured parsed-resume collection. The optional `source` query parameter accepts only `parsed` and defaults to `parsed`. ATS calculation fields are stored directly on that same parsed-resume document.
+
+Saving profile edits also updates the existing parsed-resume document in place while preserving its stable `resumeId`, metadata, source details, and image fields. The service does not use a separate edited-resume collection.
 
 This score is an ATS readiness / resume optimization score based on deterministic product rules. It is not an official score from Workday, Taleo, Greenhouse, Lever, or any other ATS vendor.
 

@@ -629,6 +629,50 @@ class MongoResumeRepositoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(document["status"], "parsed")
         self.assertEqual(document["profile"]["data"]["name"], "Alex Morgan")
 
+    async def test_save_edited_updates_existing_parsed_resume_document(self) -> None:
+        repository = MongoResumeRepository.__new__(MongoResumeRepository)
+        repository.database_name = "resume_parser"
+        repository.collection_name = "parsed_resumes"
+        repository.collection = unittest.mock.Mock()
+
+        original_id = ObjectId()
+        original_document = {
+            "_id": original_id,
+            "resumeId": str(original_id),
+            "version": 1,
+            "status": "parsed",
+            "profile": {"data": {"name": "Alex Morgan", "sections": []}},
+            "metadata": {"filename": "alex.pdf"},
+        }
+        updated_document = {
+            **original_document,
+            "status": "edited",
+            "profile": {
+                "data": {
+                    "name": "Alex Morgan",
+                    "title": "Principal Engineer",
+                    "sections": [],
+                }
+            },
+        }
+        repository.collection.find_one = AsyncMock(side_effect=[original_document, updated_document])
+        repository.collection.update_one = AsyncMock(
+            return_value=unittest.mock.Mock(matched_count=1, modified_count=1)
+        )
+        profile = ResumeProfile.model_validate(updated_document["profile"])
+
+        saved_document = await repository.save_edited(str(original_id), profile)
+
+        collection_filter, collection_update = repository.collection.update_one.await_args.args
+        self.assertEqual(collection_filter, {"_id": original_id})
+        self.assertEqual(collection_update["$set"]["status"], "edited")
+        self.assertEqual(collection_update["$set"]["profile"]["data"]["title"], "Principal Engineer")
+        self.assertIn("atsScore", collection_update["$set"])
+        self.assertNotIn("editedResume", collection_update["$set"])
+        self.assertEqual(saved_document["resumeId"], str(original_id))
+        self.assertEqual(saved_document["status"], "edited")
+        self.assertEqual(saved_document["metadata"], {"filename": "alex.pdf"})
+
     async def test_save_image_updates_parsed_document(self) -> None:
         repository = MongoResumeRepository.__new__(MongoResumeRepository)
         repository.database_name = "resume_parser"
@@ -754,6 +798,50 @@ class ResumeUserIdEndpointTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(fake_repository.requested_user_id, "user-123")
         self.assertEqual(response.json()["userId"], "user-123")
+
+    def test_save_edits_endpoint_updates_parsed_resume(self) -> None:
+        class FakeRepository:
+            def __init__(self) -> None:
+                self.saved_user_id: str | None = None
+
+            async def save_edited(
+                self,
+                resume_id: str,
+                profile: ResumeProfile,
+                user_id: str | None = None,
+            ) -> dict:
+                self.saved_user_id = user_id
+                return {
+                    "id": resume_id,
+                    "resumeId": resume_id,
+                    "userId": user_id,
+                    "version": 1,
+                    "status": "edited",
+                    "profile": profile.model_dump(mode="json"),
+                    "metadata": {"filename": "alex.pdf"},
+                    "avatar": "",
+                    "withPhoto": False,
+                }
+
+        fake_repository = FakeRepository()
+        payload = {
+            "data": {
+                "name": "Alex Morgan",
+                "title": "Principal Engineer",
+                "sections": [],
+            }
+        }
+
+        with patch("app.api.routes_resume.get_resume_repository", return_value=fake_repository):
+            response = TestClient(app).post(
+                "/api/resumes/resume123/edits?userId=user-123",
+                json=payload,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(fake_repository.saved_user_id, "user-123")
+        self.assertEqual(response.json()["status"], "edited")
+        self.assertEqual(response.json()["profile"]["data"]["title"], "Principal Engineer")
 
     def test_list_endpoint_forwards_user_id_to_repository(self) -> None:
         class FakeRepository:

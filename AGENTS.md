@@ -23,7 +23,7 @@ The parsed output is intentionally shaped for a downstream resume generation UI/
 ## Important Entry Points
 
 - `app/main.py`: FastAPI app construction, CORS, lifespan startup/shutdown, health routes, router registration.
-- `app/api/routes_resume.py`: HTTP API for parsing, listing, fetching, and updating resume images.
+- `app/api/routes_resume.py`: HTTP API for parsing, listing, fetching, and updating parsed resumes and images.
 - `app/core/config.py`: environment-backed settings and aliases.
 - `app/core/llm_client.py`: LLM abstraction and OpenAI chat-completions implementation.
 - `app/core/resume_prompt.py`: prompt contract for structured resume extraction.
@@ -49,6 +49,7 @@ The parsed output is intentionally shaped for a downstream resume generation UI/
 - `GET /api/resumes`: list saved resume summaries.
   - Query params: `limit` from 1 to 500, `skip` >= 0.
 - `GET /api/resumes/{resume_id}`: fetch a parsed resume by its stable ID.
+- `POST /api/resumes/{resume_id}/edits`: update the existing parsed-resume document in place.
 
 ## Runtime Configuration
 

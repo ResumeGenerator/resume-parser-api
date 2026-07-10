@@ -10,6 +10,7 @@ from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorCollection
 
 from app.core.config import Settings
 from app.models.resume_schema import ResumeProfile
+from app.services.ats_score_service import calculate_ats_score
 from app.services.resume_parser import normalize_resume_profile_payload
 
 logger = logging.getLogger(__name__)
@@ -101,6 +102,82 @@ class MongoResumeRepository:
 
         return self._to_response_document(document)
 
+    async def save_edited(
+        self,
+        resume_id: str,
+        profile: ResumeProfile,
+        user_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Update the existing parsed-resume document with the saved profile."""
+        user_id = self._normalize_user_id(user_id)
+        original = await self._find_original(resume_id, user_id=user_id)
+        if original is None:
+            raise ResumeNotFoundError(f"Resume {resume_id!r} was not found.")
+
+        stable_resume_id = self._stable_resume_id(original)
+        owner_user_id = self._document_user_id(original)
+        now = datetime.now(UTC)
+        profile_document = profile.model_dump(mode="json")
+        ats_calculation = calculate_ats_score(profile_document)
+        update_fields = {
+            "profile": profile_document,
+            "status": "edited",
+            **self._ats_storage_fields(ats_calculation, calculated_at=now),
+            "updatedAt": now,
+        }
+
+        result = await self.collection.update_one(
+            {"_id": original["_id"]},
+            {"$set": update_fields},
+        )
+        if not getattr(result, "matched_count", 0):
+            raise ResumeNotFoundError(f"Resume {resume_id!r} was not found.")
+
+        updated = await self.get(stable_resume_id, user_id=owner_user_id)
+        if updated is None:
+            raise RuntimeError("Resume was updated but the parsed-resume document could not be read.")
+
+        logger.info(
+            "Updated resume in MongoDB database=%r collection=%r resume_id=%s user_id=%s",
+            self.database_name,
+            self.collection_name,
+            stable_resume_id,
+            owner_user_id,
+        )
+        return updated
+
+    async def save_ats_calculation(
+        self,
+        resume_id: str,
+        calculation: dict[str, Any],
+        user_id: str | None = None,
+    ) -> bool:
+        """Store an ATS calculation on the existing parsed-resume document."""
+        user_id = self._normalize_user_id(user_id)
+        document = await self._find_original(resume_id, user_id=user_id)
+        if document is None:
+            return False
+
+        now = datetime.now(UTC)
+        update_fields = {
+            **self._ats_storage_fields(calculation, calculated_at=now),
+            "updatedAt": now,
+        }
+        result = await self.collection.update_one(
+            {"_id": document["_id"]},
+            {"$set": update_fields},
+        )
+        stored = bool(getattr(result, "matched_count", 0))
+        if stored:
+            logger.info(
+                "Saved ATS calculation to MongoDB database=%r collection=%r resume_id=%s user_id=%s",
+                self.database_name,
+                self.collection_name,
+                self._stable_resume_id(document),
+                user_id,
+            )
+        return stored
+
     async def save_image(
         self,
         resume_id: str,
@@ -169,6 +246,31 @@ class MongoResumeRepository:
     @staticmethod
     def _document_user_id(document: dict[str, Any]) -> str | None:
         return MongoResumeRepository._normalize_user_id(document.get("userId"))
+
+    @staticmethod
+    def _ats_storage_fields(
+        calculation: dict[str, Any],
+        *,
+        calculated_at: datetime,
+    ) -> dict[str, Any]:
+        if not isinstance(calculation, dict):
+            raise TypeError("ATS calculation must be a dictionary.")
+
+        score = calculation.get("atsScore")
+        if isinstance(score, bool) or not isinstance(score, (int, float)):
+            raise ValueError("ATS calculation must include a numeric atsScore.")
+
+        numeric_score = int(score)
+        if numeric_score < 0 or numeric_score > 100:
+            raise ValueError("ATS calculation atsScore must be between 0 and 100.")
+
+        stored_calculation = deepcopy(calculation)
+        stored_calculation["atsScore"] = numeric_score
+        return {
+            "atsScore": numeric_score,
+            "atsCalculation": stored_calculation,
+            "atsCalculatedAt": calculated_at,
+        }
 
     @classmethod
     def _to_response_document(
