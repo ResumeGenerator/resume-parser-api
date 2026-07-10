@@ -196,6 +196,9 @@ def sanitize_resume_response_document(document: dict[str, Any], image_url: str) 
         "withPhoto": True,
         "profile": sanitize_resume_profile_for_response(document.get("profile")),
         "metadata": document.get("metadata") if isinstance(document.get("metadata"), dict) else {},
+        "atsScore": document.get("atsScore"),
+        "atsCalculation": deepcopy(document.get("atsCalculation")),
+        "atsCalculatedAt": document.get("atsCalculatedAt"),
     }
 
 

@@ -298,6 +298,9 @@ class MongoResumeRepository:
             "withPhoto": bool(document.get("withPhoto") or avatar),
             "profile": profile,
             "metadata": metadata or {},
+            "atsScore": document.get("atsScore"),
+            "atsCalculation": deepcopy(document.get("atsCalculation")),
+            "atsCalculatedAt": document.get("atsCalculatedAt"),
         }
 
     def close(self) -> None:

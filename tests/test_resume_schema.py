@@ -581,6 +581,9 @@ class MongoResumeRepositoryTests(unittest.IsolatedAsyncioTestCase):
                         "status": "parsed",
                         "profile": {"data": {"name": "Alex Morgan", "sections": []}},
                         "metadata": {"filename": "alex.pdf"},
+                        "atsScore": 86,
+                        "atsCalculation": {"atsScore": 86, "scoreLevel": "Excellent"},
+                        "atsCalculatedAt": "2026-07-10T15:19:12.246+00:00",
                     }
                 ]
 
@@ -590,6 +593,9 @@ class MongoResumeRepositoryTests(unittest.IsolatedAsyncioTestCase):
 
         repository.collection.find.assert_called_once_with({"userId": "user-123"})
         self.assertEqual(documents[0]["userId"], "user-123")
+        self.assertEqual(documents[0]["atsScore"], 86)
+        self.assertEqual(documents[0]["atsCalculation"]["scoreLevel"], "Excellent")
+        self.assertEqual(documents[0]["atsCalculatedAt"], "2026-07-10T15:19:12.246+00:00")
 
     async def test_find_original_filters_by_user_id_when_provided(self) -> None:
         repository = MongoResumeRepository.__new__(MongoResumeRepository)
@@ -861,6 +867,9 @@ class ResumeUserIdEndpointTests(unittest.TestCase):
                         "metadata": {"filename": "alex.pdf"},
                         "avatar": "",
                         "withPhoto": False,
+                        "atsScore": 86,
+                        "atsCalculation": {"atsScore": 86, "scoreLevel": "Excellent"},
+                        "atsCalculatedAt": "2026-07-10T15:19:12.246+00:00",
                     }
                 ]
 
@@ -872,6 +881,9 @@ class ResumeUserIdEndpointTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(fake_repository.requested_user_id, "user-123")
         self.assertEqual(response.json()[0]["userId"], "user-123")
+        self.assertEqual(response.json()[0]["atsScore"], 86)
+        self.assertEqual(response.json()[0]["atsCalculation"]["scoreLevel"], "Excellent")
+        self.assertEqual(response.json()[0]["atsCalculatedAt"], "2026-07-10T15:19:12.246000Z")
 
 
 class ResumeImageEndpointTests(unittest.TestCase):

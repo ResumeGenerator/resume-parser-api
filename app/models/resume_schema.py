@@ -1,5 +1,5 @@
 import re
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -413,6 +413,9 @@ class ResumeParseResponse(StrictBaseModel):
     status: str | None = None
     avatar: str = ""
     withPhoto: bool = False
+    atsScore: int | None = Field(default=None, ge=0, le=100)
+    atsCalculation: dict[str, Any] | None = None
+    atsCalculatedAt: datetime | None = None
 
 
 class ResumeRephraseRequest(StrictBaseModel):

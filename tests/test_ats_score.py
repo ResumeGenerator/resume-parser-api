@@ -150,9 +150,14 @@ class AtsEndpointTests(unittest.TestCase):
         self.assertNotIn("jobMatchAnalysis", response.json())
 
     def test_ats_score_endpoint_rejects_invalid_source_with_400(self) -> None:
-        response = TestClient(app).get("/api/resumes/resume123/ats-score?source=raw")
+        for source in ("edited", "raw"):
+            with self.subTest(source=source):
+                response = TestClient(app).get(
+                    "/api/resumes/resume123/ats-score",
+                    params={"source": source},
+                )
 
-        self.assertEqual(response.status_code, 400)
+                self.assertEqual(response.status_code, 400)
 
 if __name__ == "__main__":
     unittest.main()

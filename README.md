@@ -189,7 +189,9 @@ Calculate an ATS readiness / resume optimization score from an already saved Mon
 curl "http://localhost:8000/api/resumes/{resumeId}/ats-score"
 ```
 
-The endpoint reads only from the configured parsed-resume collection. The optional `source` query parameter accepts only `parsed` and defaults to `parsed`. ATS calculation fields are stored directly on that same parsed-resume document.
+The endpoint reads only from the configured parsed-resume collection. The optional `source` query parameter accepts only `parsed` and defaults to `parsed`. ATS calculation fields are stored directly on that document.
+
+`GET /api/resumes` and `GET /api/resumes/{resume_id}` return the stored `atsScore`, `atsCalculation`, and `atsCalculatedAt` fields when they are available.
 
 Saving profile edits also updates the existing parsed-resume document in place while preserving its stable `resumeId`, metadata, source details, and image fields. The service does not use a separate edited-resume collection.
 
